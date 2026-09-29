@@ -1,11 +1,15 @@
+import { openUrl } from '@tauri-apps/plugin-opener';
+
 /**
  * SettingsModal: Horizontal preferences dialog with left category tabs
  */
 export class SettingsModal {
-  constructor({ container, settingsManager, onApplySettings }) {
+  constructor({ container, settingsManager, onApplySettings, onCheckUpdate, currentVersion = '0.1.0' }) {
     this.container = container;
     this.settingsManager = settingsManager;
     this.onApplySettings = onApplySettings;
+    this.onCheckUpdate = onCheckUpdate;
+    this.currentVersion = currentVersion;
     this.isOpen = false;
     this.activeTab = 'habits';
 
@@ -42,6 +46,10 @@ export class SettingsModal {
             <button class="settings-tab-btn" data-tab="appearance">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 0 0 20Z"/></svg>
               <span>界面与放映</span>
+            </button>
+            <button class="settings-tab-btn" data-tab="about">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              <span>关于与更新</span>
             </button>
           </div>
 
@@ -182,6 +190,51 @@ export class SettingsModal {
                 </div>
               </div>
             </div>
+
+            <!-- 4. 关于与更新 Tab -->
+            <div class="settings-tab-pane" id="pane-about">
+              <div class="settings-about-hero">
+                <div class="about-app-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
+                    <circle cx="9" cy="9" r="2"/>
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                  </svg>
+                </div>
+                <div class="about-app-info">
+                  <div class="about-title-row">
+                    <h3 class="about-app-title">方序看图</h3>
+                    <span class="about-version-badge">v${this.currentVersion}</span>
+                  </div>
+                  <p class="about-app-desc">极速、简约、流畅的跨平台看图体验</p>
+                </div>
+              </div>
+
+              <div class="settings-section" style="margin-top: 18px;">
+                <div class="settings-section-title">版本更新</div>
+                <div class="settings-update-card">
+                  <div class="update-info-block">
+                    <div class="update-status-title" id="about-update-status">当前版本：v${this.currentVersion}</div>
+                    <div class="update-status-desc" id="about-update-desc">点击右侧按钮检查是否有新版本可用</div>
+                  </div>
+                  <button class="settings-check-update-btn" id="btn-check-update" type="button">检查更新</button>
+                </div>
+              </div>
+
+              <div class="settings-section" style="margin-top: 18px;">
+                <div class="settings-section-title">开源与支持</div>
+                <div class="about-links-group">
+                  <div class="about-link-row">
+                    <span class="link-label">GitHub 仓库</span>
+                    <a href="https://github.com/goldenwind/fangxu-viewer" class="about-link" target="_blank">github.com/goldenwind/fangxu-viewer</a>
+                  </div>
+                  <div class="about-link-row">
+                    <span class="link-label">最新发布页</span>
+                    <a href="https://github.com/goldenwind/fangxu-viewer/releases" class="about-link" target="_blank">查看 Releases</a>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -286,6 +339,57 @@ export class SettingsModal {
 
     this.slideshowSpeedSelect.addEventListener('change', () => {
       this.updateSetting('slideshowInterval', parseInt(this.slideshowSpeedSelect.value, 10));
+    });
+
+    // Check Update Button
+    const checkBtn = this.container.querySelector('#btn-check-update');
+    const statusTitle = this.container.querySelector('#about-update-status');
+    const statusDesc = this.container.querySelector('#about-update-desc');
+
+    if (checkBtn) {
+      checkBtn.addEventListener('click', async () => {
+        checkBtn.disabled = true;
+        checkBtn.textContent = '检查中...';
+        if (statusTitle) statusTitle.textContent = '正在检查最新版本...';
+        if (statusDesc) statusDesc.textContent = '连接更新服务器中，请稍候';
+
+        try {
+          if (this.onCheckUpdate) {
+            const release = await this.onCheckUpdate();
+            if (release && release.updateAvailable) {
+              if (statusTitle) statusTitle.textContent = `发现新版本：${release.latestVersion}`;
+              if (statusDesc) statusDesc.textContent = release.title || '有新版本可用，已弹出升级提示';
+              checkBtn.textContent = '发现新版';
+            } else {
+              if (statusTitle) statusTitle.textContent = `当前已是最新版本 (v${this.currentVersion})`;
+              if (statusDesc) statusDesc.textContent = '暂无新版本发布';
+              checkBtn.textContent = '已是最新';
+            }
+          } else {
+            if (statusTitle) statusTitle.textContent = `当前已是最新版本 (v${this.currentVersion})`;
+            if (statusDesc) statusDesc.textContent = '暂无新版本发布';
+            checkBtn.textContent = '已是最新';
+          }
+        } catch (err) {
+          if (statusTitle) statusTitle.textContent = '检查更新失败';
+          if (statusDesc) statusDesc.textContent = String(err.message || err);
+          checkBtn.textContent = '重新检查';
+        } finally {
+          checkBtn.disabled = false;
+        }
+      });
+    }
+
+    // External links handler
+    this.container.querySelectorAll('.about-link').forEach((link) => {
+      link.addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+          await openUrl(link.href);
+        } catch {
+          window.open(link.href, '_blank');
+        }
+      });
     });
   }
 

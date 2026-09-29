@@ -178,10 +178,20 @@ controller = new ViewerController({
   },
 });
 
-// 7. Initialize Settings Modal
+// 7. Update Manager
+const updateManager = new UpdateManager({
+  root: document.body,
+  service: new UpdateService(APP_CONFIG.updates),
+  config: APP_CONFIG.updates,
+});
+updateManager.initialize();
+
+// 8. Initialize Settings Modal
 settingsModal = new SettingsModal({
   container: settingsModalContainer,
   settingsManager,
+  currentVersion: '0.1.0',
+  onCheckUpdate: () => updateManager.checkNow(true),
   onApplySettings: (allSettings) => {
     canvasView.setTheme(allSettings.backgroundTheme);
     slideshow.setIntervalDuration(allSettings.slideshowInterval);
@@ -193,7 +203,7 @@ settingsModal = new SettingsModal({
   },
 });
 
-// 8. Initialize UI Toolbar
+// 9. Initialize UI Toolbar
 uiToolbar = new UIToolbar({
   topbarContainer,
   bottomToolbarContainer,
@@ -317,15 +327,7 @@ if (initialFilmstripMode === 'always') {
   filmstrip.show();
 }
 
-// 9. Update Manager
-const updateManager = new UpdateManager({
-  root: document.body,
-  service: new UpdateService(APP_CONFIG.updates),
-  config: APP_CONFIG.updates,
-});
-updateManager.initialize();
-
-// 9. Drag & drop support
+// 10. Drag & drop support
 window.addEventListener('dragover', (e) => {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'copy';

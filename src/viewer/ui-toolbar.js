@@ -79,7 +79,7 @@ export class UIToolbar {
         <div class="meta-tag" id="top-dimensions" title="分辨率" style="display:none;"></div>
         <div class="meta-tag" id="top-filesize" title="文件大小" style="display:none;"></div>
         <div class="meta-tag" id="top-index-counter" title="当前张数 / 总张数" style="display:none;"></div>
-        <div class="meta-tag meta-zoom-tag" id="top-zoom" title="当前缩放比">适应窗口</div>
+        <div class="meta-tag meta-zoom-tag" id="top-zoom" title="当前缩放比" style="display:none;"></div>
       </div>
 
       <div class="topbar-right">
@@ -361,6 +361,7 @@ export class UIToolbar {
       this.topDimensions.style.display = 'none';
       this.topFilesize.style.display = 'none';
       this.topIndexCounter.style.display = 'none';
+      this.topZoom.style.display = 'none';
       this.btnTopReveal.style.display = 'none';
       this.btnTopCopy.style.display = 'none';
       this.btnTopSaveas.style.display = 'none';
@@ -369,6 +370,7 @@ export class UIToolbar {
       return;
     }
 
+    this.topZoom.style.display = 'inline-flex';
     this.bottomToolbarContainer.style.display = 'flex';
     this.showToolbar();
     this.startIdleTimer();

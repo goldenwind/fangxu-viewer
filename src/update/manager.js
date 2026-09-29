@@ -34,6 +34,54 @@ export class UpdateManager {
     }
   }
 
+  async checkNow(manual = false) {
+    if (this.service && this.service.enabled) {
+      try {
+        const release = await this.service.check(getInstallationId());
+        if (release && release.updateAvailable) {
+          this.release = release;
+          this.render();
+        }
+        return release;
+      } catch (err) {
+        if (!manual) throw err;
+      }
+    }
+
+    // Fallback: check GitHub Releases API
+    try {
+      const res = await fetch('https://api.github.com/repos/goldenwind/fangxu-viewer/releases/latest');
+      if (res.ok) {
+        const data = await res.json();
+        const latestTag = data.tag_name || '';
+        const latestVer = latestTag.replace(/^v/, '');
+        const currentVer = '0.1.0';
+        const isNewer = latestVer && latestVer !== currentVer;
+        const release = {
+          updateAvailable: isNewer,
+          currentVersion: currentVer,
+          latestVersion: latestVer,
+          title: data.name || latestTag,
+          releaseNotes: data.body || '',
+          pageUrl: data.html_url || 'https://github.com/goldenwind/fangxu-viewer/releases',
+        };
+        if (isNewer) {
+          this.release = release;
+          this.render();
+        }
+        return release;
+      }
+    } catch {
+      // ignore network errors
+    }
+
+    return {
+      updateAvailable: false,
+      currentVersion: '0.1.0',
+      latestVersion: '0.1.0',
+    };
+  }
+
   render(message = '') {
     const release = this.release;
     if (!release) return;
