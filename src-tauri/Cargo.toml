@@ -1,0 +1,29 @@
+[package]
+name = "fangxu-viewer"
+version = "0.1.0"
+description = "Cross-platform minimalist image viewer by Fangxu"
+authors = ["fangxu"]
+edition = "2021"
+
+[lib]
+name = "fangxu_viewer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+sha2 = "0.10"
+tauri-plugin-opener = "2"
+tokio = { version = "1", features = ["fs", "io-util"] }
+trash = "5.2"
+kamadak-exif = "0.6"
+arboard = "3"
+rfd = "0.15"
+image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
+base64 = "0.22"

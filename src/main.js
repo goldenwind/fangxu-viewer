@@ -1,0 +1,242 @@
+import './styles.css';
+import { invoke } from '@tauri-apps/api/core';
+import { APP_CONFIG } from './config.js';
+import { UsageTracker } from './core/usage-tracker.js';
+import { MembershipService } from './membership/service.js';
+import { MembershipCenter } from './membership/center.js';
+import { UpdateService } from './update/service.js';
+import { UpdateManager } from './update/manager.js';
+
+import { CanvasView } from './viewer/canvas-view.js';
+import { Filmstrip } from './viewer/filmstrip.js';
+import { ExifDrawer } from './viewer/exif-drawer.js';
+import { Slideshow } from './viewer/slideshow.js';
+import { ViewerController } from './viewer/controller.js';
+import { UIToolbar } from './viewer/ui-toolbar.js';
+import { EmptyState } from './viewer/empty-state.js';
+
+// DOM elements
+const topbarContainer = document.querySelector('#topbar-container');
+const canvasContainer = document.querySelector('#canvas-container');
+const sideArrowsContainer = document.querySelector('#side-arrows-container');
+const bottomToolbarContainer = document.querySelector('#bottom-toolbar-container');
+const filmstripContainer = document.querySelector('#filmstrip-container');
+const exifDrawerContainer = document.querySelector('#exif-drawer-container');
+const slideshowContainer = document.querySelector('#slideshow-container');
+const emptyContainer = document.querySelector('#empty-container');
+const toastContainer = document.querySelector('#toast-container');
+const membershipModalContainer = document.querySelector('#membership-modal-container');
+
+// Toast notification helper
+function showToast(message, duration = 2200) {
+  if (!toastContainer || !message) return;
+  const toast = document.createElement('div');
+  toast.className = 'viewer-toast';
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 250);
+  }, duration);
+}
+
+// Confirmation modal helper
+function confirmDialog(message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'viewer-help-modal-overlay is-open';
+    overlay.innerHTML = `
+      <div class="viewer-help-card" style="max-width: 380px;">
+        <div class="help-card-header">
+          <h3>操作确认</h3>
+        </div>
+        <div class="help-card-body" style="padding: 22px 20px;">
+          <p style="color: var(--text-primary); font-size: 13px; line-height: 1.6;">${message}</p>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border-subtle);">
+          <button class="top-icon-btn" id="confirm-cancel" style="padding: 7px 14px;">取消</button>
+          <button class="empty-primary-btn" id="confirm-ok" style="background: var(--danger); color: white; padding: 7px 16px; font-size: 12px; box-shadow: none;">确定</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#confirm-cancel').addEventListener('click', () => {
+      overlay.remove();
+      resolve(false);
+    });
+    overlay.querySelector('#confirm-ok').addEventListener('click', () => {
+      overlay.remove();
+      resolve(true);
+    });
+  });
+}
+
+// 1. Initialize Canvas View
+let uiToolbar = null;
+const canvasView = new CanvasView({
+  container: canvasContainer,
+  onTransformChange: (info) => {
+    if (uiToolbar) uiToolbar.updateTransform(info);
+  },
+});
+
+// 2. Initialize Filmstrip
+let controller = null;
+const filmstrip = new Filmstrip({
+  container: filmstripContainer,
+  onSelectImage: (index) => {
+    if (controller) controller.jumpToIndex(index);
+  },
+  resolveImageSrc: (path) => {
+    return controller ? controller.resolveSrc(path) : path;
+  },
+});
+
+// 3. Initialize EXIF Drawer
+const exifDrawer = new ExifDrawer({
+  container: exifDrawerContainer,
+  onClose: () => {
+    const exifBtn = document.querySelector('#bar-exif');
+    if (exifBtn) exifBtn.classList.remove('is-active');
+  },
+});
+
+// 4. Initialize Slideshow
+const slideshow = new Slideshow({
+  container: slideshowContainer,
+  onNext: () => {
+    if (controller) controller.nextImage();
+  },
+  onPrev: () => {
+    if (controller) controller.prevImage();
+  },
+  onExit: () => {
+    // Return to normal view
+  },
+});
+
+// 5. Initialize Empty State
+const emptyState = new EmptyState({
+  container: emptyContainer,
+  onOpenFile: () => {
+    if (controller) controller.openFileDialog();
+  },
+});
+
+// 6. Initialize Controller
+controller = new ViewerController({
+  canvasView,
+  filmstrip,
+  exifDrawer,
+  slideshow,
+  showToast,
+  confirmDialog,
+  onStateChange: (state) => {
+    if (uiToolbar) uiToolbar.updateState(state);
+    if (!state.hasImage) {
+      emptyState.show();
+    } else {
+      emptyState.hide();
+    }
+  },
+});
+
+// 7. Starter Foundation (Membership, Updates)
+const usage = new UsageTracker({ limit: APP_CONFIG.membership.freeUsesPerMonth });
+const service = new MembershipService(APP_CONFIG.membership);
+
+membershipModalContainer.innerHTML = `
+  <div class="membership-dialog">
+    <div data-membership-root></div>
+  </div>
+`;
+
+const membershipCenter = new MembershipCenter({
+  root: membershipModalContainer.querySelector('[data-membership-root]'),
+  service,
+  usage,
+  config: { ...APP_CONFIG.membership, brandName: APP_CONFIG.brand.name },
+});
+
+// Let closing membership modal hide the overlay
+membershipModalContainer.addEventListener('click', (e) => {
+  if (e.target === membershipModalContainer) {
+    membershipModalContainer.style.display = 'none';
+  }
+});
+
+const updateManager = new UpdateManager({
+  root: document.body,
+  service: new UpdateService(APP_CONFIG.updates),
+  config: APP_CONFIG.updates,
+});
+
+membershipCenter.initialize();
+updateManager.initialize();
+
+// 8. Initialize UI Toolbar
+uiToolbar = new UIToolbar({
+  topbarContainer,
+  bottomToolbarContainer,
+  sideArrowsContainer,
+  controller,
+  canvasView,
+  onOpenAbout: () => {
+    membershipModalContainer.style.display = 'grid';
+    membershipCenter.open();
+  },
+});
+
+// 9. Drag & drop support
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  const files = e.dataTransfer.files;
+  if (files && files.length > 0) {
+    const file = files[0];
+    const targetPath = file.path || file.name;
+    if (targetPath) {
+      await controller.openTarget(targetPath);
+    }
+  }
+});
+
+// Listen to Tauri 2 native drag drop event
+(async () => {
+  try {
+    const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const appWindow = getCurrentWebviewWindow();
+    await appWindow.onDragDropEvent(async (event) => {
+      if (event.payload.type === 'drop') {
+        const paths = event.payload.paths;
+        if (paths && paths.length > 0) {
+          await controller.openTarget(paths[0]);
+        }
+      }
+    });
+  } catch (err) {
+    // Non-tauri fallback
+  }
+})();
+
+// 10. Check startup arguments (Command line or Open With)
+(async () => {
+  try {
+    const cliTarget = await invoke('get_cli_target');
+    if (cliTarget) {
+      await controller.openTarget(cliTarget);
+      return;
+    }
+  } catch (e) {
+    // Continue with empty state
+  }
+
+  // Initial state is empty
+  controller.notifyState();
+})();
