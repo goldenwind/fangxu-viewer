@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 /**
- * UIToolbar: Manages 2345-style Topbar, Floating Bottom Toolbar, and Side Navigation Arrows
+ * UIToolbar: Manages Topbar, Floating Bottom Toolbar, and Side Navigation Arrows
  */
 
 function formatBytes(bytes) {
@@ -28,11 +28,18 @@ export class UIToolbar {
     this.canvasView = canvasView;
     this.onOpenSettings = onOpenSettings;
 
+    this.idleTimer = null;
+    this.isHoveringToolbar = false;
+
     this.setupDOM();
     this.bindEvents();
   }
 
   setupDOM() {
+    const isMac = typeof navigator !== 'undefined' && (/Mac|iPhone|iPod|iPad/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent));
+    const revealTitle = isMac ? '在访达中显示' : '在文件资源管理器中显示';
+    const revealText = isMac ? '访达' : '定位';
+
     // 1. Topbar
     this.topbarContainer.classList.add('viewer-topbar');
     this.topbarContainer.setAttribute('data-tauri-drag-region', 'true');
@@ -40,13 +47,20 @@ export class UIToolbar {
       <div class="topbar-left" data-tauri-drag-region="true">
         <div class="custom-window-controls" data-tauri-drag-region="false">
           <button class="win-btn win-close" id="btn-win-close" title="关闭窗口 (⌘W)">
-            <svg class="win-btn-icon" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            <svg class="win-btn-icon" width="12" height="12" viewBox="0 0 85.4 85.4" fill="none">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M22.5 57.8L57.8 22.5C59.2 21.1 61.4 21.1 62.8 22.5L62.9 22.6C64.3 24 64.3 26.2 62.9 27.6L27.6 62.9C26.2 64.3 24 64.3 22.6 62.9L22.5 62.8C21.2 61.4 21.2 59.2 22.5 57.8Z" fill="currentColor"/>
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M27.6 22.5L62.9 57.8C64.3 59.2 64.3 61.4 62.9 62.8L62.8 62.9C61.4 64.3 59.2 64.3 57.8 62.9L22.5 27.6C21.1 26.2 21.1 24 22.5 22.6L22.6 22.5C24 21.2 26.2 21.2 27.6 22.5Z" fill="currentColor"/>
+            </svg>
           </button>
           <button class="win-btn win-min" id="btn-win-min" title="最小化 (⌘M)">
-            <svg class="win-btn-icon" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg>
+            <svg class="win-btn-icon" width="12" height="12" viewBox="0 0 85.4 85.4" fill="none">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M17.8 39.1H67.7C69.6 39.1 71.2 40.7 71.2 42.6V42.7C71.2 44.6 69.6 46.2 67.7 46.2H17.8C15.9 46.2 14.3 44.6 14.3 42.7V42.6C14.3 40.7 15.8 39.1 17.8 39.1Z" fill="currentColor"/>
+            </svg>
           </button>
           <button class="win-btn win-max" id="btn-win-max" title="最大化 / 还原">
-            <svg class="win-btn-icon" width="7" height="7" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,3 21,3 21,21 3,21"/></svg>
+            <svg class="win-btn-icon" width="12" height="12" viewBox="0 0 85.4 85.4" fill="none">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M54.2 20.8H27.5C23.9 20.8 21 23.7 21 27.3V54L54.2 20.8ZM31 64.5H57.8C61.4 64.5 64.3 61.6 64.3 58V31.2L31 64.5Z" fill="currentColor"/>
+            </svg>
           </button>
         </div>
 
@@ -73,9 +87,11 @@ export class UIToolbar {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
           <span>打开</span>
         </button>
-        <button class="top-icon-btn" id="btn-top-reveal" title="在访达/资源管理器中定位" style="display:none;">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <span>定位</span>
+        <button class="top-icon-btn" id="btn-top-reveal" title="${revealTitle}" style="display:none;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/>
+          </svg>
+          <span>${revealText}</span>
         </button>
         <button class="top-icon-btn" id="btn-top-copy" title="复制图片到剪贴板 (Ctrl/Cmd + C)" style="display:none;">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
@@ -84,10 +100,6 @@ export class UIToolbar {
         <button class="top-icon-btn" id="btn-top-saveas" title="另存为... (Ctrl/Cmd + S)" style="display:none;">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           <span>另存为</span>
-        </button>
-        <button class="top-icon-btn" id="btn-top-help" title="查看快捷键与帮助">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
-          <span>帮助</span>
         </button>
         <button class="top-icon-btn" id="btn-top-settings" title="偏好设置 (Ctrl/Cmd + ,)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -99,7 +111,7 @@ export class UIToolbar {
       </div>
     `;
 
-    // 2. Bottom Floating Toolbar (Classic 2345 Design)
+    // 2. Bottom Floating Toolbar
     this.bottomToolbarContainer.classList.add('viewer-bottom-toolbar');
     this.bottomToolbarContainer.innerHTML = `
       <div class="bottom-bar-pill">
@@ -155,11 +167,21 @@ export class UIToolbar {
         </button>
 
         <button class="toolbar-btn" id="bar-exif" title="图片信息 / EXIF (I)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4"/>
+            <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/>
+          </svg>
         </button>
 
         <button class="toolbar-btn toolbar-btn-danger" id="bar-trash" title="移入回收站 (Delete)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x1="10" y1="11" y2="17"/><line x2="14" x1="14" y1="11" y2="17"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            <line x1="10" y1="11" x2="10" y2="17"/>
+            <line x1="14" y1="11" x2="14" y2="17"/>
+          </svg>
         </button>
 
         <button class="toolbar-btn" id="bar-fullscreen" title="全屏查看 (F11 / Enter)">
@@ -210,6 +232,12 @@ export class UIToolbar {
     const btnWinMin = this.topbarContainer.querySelector('#btn-win-min');
     const btnWinMax = this.topbarContainer.querySelector('#btn-win-max');
 
+    const winControls = this.topbarContainer.querySelector('.custom-window-controls');
+    if (winControls) {
+      winControls.addEventListener('mouseenter', () => winControls.classList.add('is-hovered'));
+      winControls.addEventListener('mouseleave', () => winControls.classList.remove('is-hovered'));
+    }
+
     if (btnWinClose) {
       btnWinClose.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -230,9 +258,31 @@ export class UIToolbar {
     }
 
     // Double click topbar drag region to maximize/restore
-    this.topbarContainer.addEventListener('dblclick', (e) => {
+    const handleTopbarDblClick = (e) => {
       if (e.target.closest('button, .file-name-badge, .meta-tag, .viewer-help-card')) return;
       invoke('toggle_maximize_window').catch(() => {});
+    };
+
+    this.topbarContainer.addEventListener('mousedown', (e) => {
+      if (e.detail === 2) {
+        handleTopbarDblClick(e);
+      }
+    });
+    this.topbarContainer.addEventListener('dblclick', handleTopbarDblClick);
+
+    // Auto-hide toolbar on idle
+    this.bottomToolbarContainer.addEventListener('mouseenter', () => {
+      this.isHoveringToolbar = true;
+      this.showToolbar();
+    });
+    this.bottomToolbarContainer.addEventListener('mouseleave', () => {
+      this.isHoveringToolbar = false;
+      this.startIdleTimer();
+    });
+
+    window.addEventListener('mousemove', () => {
+      this.showToolbar();
+      this.startIdleTimer();
     });
 
     // Topbar buttons
@@ -243,9 +293,6 @@ export class UIToolbar {
     this.btnTopSettings.addEventListener('click', () => {
       if (this.onOpenSettings) this.onOpenSettings();
     });
-
-    // Help modal trigger
-    this.btnTopHelp.addEventListener('click', () => this.showHelpModal());
 
     // Bottombar navigation
     this.bottomToolbarContainer.querySelector('#bar-prev').addEventListener('click', () => this.controller.prevImage());
@@ -281,10 +328,35 @@ export class UIToolbar {
     this.sideArrowsContainer.querySelector('#arrow-next').addEventListener('click', () => this.controller.nextImage());
   }
 
+  showToolbar() {
+    this.bottomToolbarContainer.classList.remove('is-idle');
+  }
+
+  hideToolbar() {
+    if (!this.isHoveringToolbar) {
+      this.bottomToolbarContainer.classList.add('is-idle');
+    }
+  }
+
+  startIdleTimer() {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+    }
+    this.idleTimer = setTimeout(() => {
+      this.hideToolbar();
+    }, 3000);
+  }
+
   updateState(state) {
-    const { currentImage, currentIndex, total, currentMetadata } = state;
+    const { currentImage, currentIndex, total, currentMetadata, isFullscreen } = state;
+
+    const appRoot = document.querySelector('.viewer-app-root');
+    if (appRoot) {
+      appRoot.classList.toggle('is-fullscreen', !!isFullscreen);
+    }
 
     if (!currentImage) {
+      if (this.idleTimer) clearTimeout(this.idleTimer);
       this.topFilename.textContent = '方序看图 - 简约极速看图工具';
       this.topDimensions.style.display = 'none';
       this.topFilesize.style.display = 'none';
@@ -298,6 +370,8 @@ export class UIToolbar {
     }
 
     this.bottomToolbarContainer.style.display = 'flex';
+    this.showToolbar();
+    this.startIdleTimer();
     this.sideArrowsContainer.style.display = total > 1 ? 'block' : 'none';
 
     this.topFilename.textContent = currentImage.name;
@@ -357,12 +431,13 @@ export class UIToolbar {
       modal.innerHTML = `
         <div class="viewer-help-card">
           <div class="help-card-header">
-            <h3>快捷键指南 (参考 2345 看图)</h3>
+            <h3>快捷键指南</h3>
             <button class="help-close-btn">&times;</button>
           </div>
           <div class="help-card-body">
             <div class="shortcut-group">
               <h4>图片翻页与浏览</h4>
+              <div class="shortcut-row"><kbd>鼠标滚轮</kbd><span>上一张 / 下一张图片</span></div>
               <div class="shortcut-row"><kbd>←</kbd> / <kbd>PageUp</kbd> / <kbd>A</kbd><span>上一张图片</span></div>
               <div class="shortcut-row"><kbd>→</kbd> / <kbd>PageDown</kbd> / <kbd>D</kbd><span>下一张图片</span></div>
               <div class="shortcut-row"><kbd>Home</kbd> / <kbd>End</kbd><span>跳转到第一张 / 最后一张</span></div>
@@ -370,7 +445,7 @@ export class UIToolbar {
             </div>
             <div class="shortcut-group">
               <h4>缩放与视角</h4>
-              <div class="shortcut-row"><kbd>鼠标滚轮</kbd><span>以光标位置为中心缩放</span></div>
+              <div class="shortcut-row"><kbd>⌘ / Ctrl + 滚轮</kbd><span>以光标位置为中心缩放</span></div>
               <div class="shortcut-row"><kbd>鼠标拖拽</kbd><span>放大后平移查看细节</span></div>
               <div class="shortcut-row"><kbd>鼠标双击</kbd><span>适应窗口 与 1:1 实际大小切换</span></div>
               <div class="shortcut-row"><kbd>↑</kbd> / <kbd>+</kbd><span>放大图片</span></div>
@@ -403,6 +478,18 @@ export class UIToolbar {
       modal.addEventListener('click', (e) => {
         if (e.target === modal) close();
       });
+
+      window.addEventListener(
+        'keydown',
+        (e) => {
+          if (e.key === 'Escape' && modal.classList.contains('is-open')) {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+          }
+        },
+        true
+      );
     }
 
     modal.classList.add('is-open');

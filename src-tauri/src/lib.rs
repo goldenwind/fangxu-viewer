@@ -43,8 +43,6 @@ fn build_localized_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Erro
         .item(&MenuItemBuilder::with_id("copy", "复制图片数据")
             .accelerator("CmdOrCtrl+C")
             .build(app)?)
-        .separator()
-        .item(&PredefinedMenuItem::select_all(app, Some("全选"))?)
         .build()?;
 
     let view_submenu = SubmenuBuilder::new(app, "查看")
@@ -60,6 +58,12 @@ fn build_localized_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Erro
             .build(app)?)
         .item(&MenuItemBuilder::with_id("fit_window", "适应窗口")
             .accelerator("0")
+            .build(app)?)
+        .item(&MenuItemBuilder::with_id("zoom_in", "放大")
+            .accelerator("CmdOrCtrl+=")
+            .build(app)?)
+        .item(&MenuItemBuilder::with_id("zoom_out", "缩小")
+            .accelerator("CmdOrCtrl+-")
             .build(app)?)
         .separator()
         .item(&MenuItemBuilder::with_id("rotate_left", "逆时针旋转 90°")
@@ -82,17 +86,22 @@ fn build_localized_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Erro
             .accelerator("F5")
             .build(app)?)
         .separator()
-        .item(&PredefinedMenuItem::fullscreen(app, Some("切换全屏模式"))?)
+        .item(&MenuItemBuilder::with_id("fullscreen", "切换全屏模式")
+            .accelerator("F11")
+            .build(app)?)
         .build()?;
 
     let window_submenu = SubmenuBuilder::new(app, "窗口")
         .item(&PredefinedMenuItem::minimize(app, Some("最小化"))?)
+        .item(&MenuItemBuilder::with_id("maximize", "最大化 / 还原窗口")
+            .build(app)?)
         .separator()
         .item(&PredefinedMenuItem::bring_all_to_front(app, Some("前置全部窗口"))?)
         .build()?;
 
     let help_submenu = SubmenuBuilder::new(app, "帮助")
-        .item(&MenuItemBuilder::with_id("help", "快捷键与使用帮助")
+        .item(&MenuItemBuilder::with_id("help", "快捷键指南")
+            .accelerator("CmdOrCtrl+/")
             .build(app)?)
         .build()?;
 

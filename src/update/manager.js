@@ -76,6 +76,13 @@ export class UpdateManager {
       }
     });
     this.root.querySelector('[data-download-update]')?.addEventListener('click', () => this.download());
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.release && !this.release.forceUpdate) {
+        this.root.innerHTML = '';
+        this.release = null;
+      }
+    });
   }
 
   showMessage(message, percent) {

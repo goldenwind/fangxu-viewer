@@ -1,5 +1,14 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 
+export const NON_BROWSER_EXTS = new Set([
+  'tga', 'icb', 'vda', 'vst', 'dds', 'hdr', 'pnm', 'pbm', 'pgm', 'ppm', 'pam', 'qoi', 'exr', 'ff'
+]);
+
+export function isNonBrowserImage(filePath) {
+  const ext = (filePath || '').split('.').pop().toLowerCase();
+  return NON_BROWSER_EXTS.has(ext);
+}
+
 export class ViewerController {
   constructor({
     canvasView,
@@ -89,8 +98,17 @@ export class ViewerController {
 
     // Read metadata and EXIF in parallel
     let meta = null;
+    let initialSrc = src;
     try {
-      meta = await invoke('read_image_meta', { filePath: imgItem.path });
+      const promises = [invoke('read_image_meta', { filePath: imgItem.path })];
+      if (isNonBrowserImage(imgItem.path)) {
+        promises.push(invoke('read_image_as_data_url', { filePath: imgItem.path }));
+      }
+      const results = await Promise.all(promises);
+      meta = results[0];
+      if (results[1]) {
+        initialSrc = results[1];
+      }
     } catch (e) {
       console.warn('获取元数据失败:', e);
       meta = {
@@ -108,7 +126,7 @@ export class ViewerController {
     this.currentMetadata = meta;
     this.exifDrawer.setMetadata(meta);
     this.canvasView.setImage(
-      src,
+      initialSrc,
       meta.width,
       meta.height,
       () => invoke('read_image_as_data_url', { filePath: imgItem.path })
@@ -327,15 +345,38 @@ export class ViewerController {
 
   bindKeyboardShortcuts() {
     window.addEventListener('keydown', (e) => {
-      // Don't intercept if typing in an input/textarea
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+      // Don't intercept if typing in an input/textarea (except for Escape)
+      if (e.key !== 'Escape' && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
         return;
       }
 
       const ctrlOrCmd = e.ctrlKey || e.metaKey;
 
-      // Esc: Close drawers, exit slideshow, or exit fullscreen
+      // Esc: Close settings, help, dialogs, drawers, exit slideshow, or exit fullscreen
       if (e.key === 'Escape') {
+        const settingsOverlay = document.querySelector('.viewer-settings-modal-overlay.is-open');
+        if (settingsOverlay) {
+          settingsOverlay.classList.remove('is-open');
+          return;
+        }
+
+        const helpModal = document.querySelector('#viewer-help-modal.is-open');
+        if (helpModal) {
+          helpModal.classList.remove('is-open');
+          return;
+        }
+
+        const openOverlay = document.querySelector('.viewer-help-modal-overlay.is-open');
+        if (openOverlay) {
+          const cancelBtn = openOverlay.querySelector('#confirm-cancel') || openOverlay.querySelector('.help-close-btn');
+          if (cancelBtn) {
+            cancelBtn.click();
+          } else {
+            openOverlay.classList.remove('is-open');
+          }
+          return;
+        }
+
         if (this.slideshow.isPlaying) {
           this.slideshow.stop();
           return;

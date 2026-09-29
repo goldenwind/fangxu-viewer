@@ -4,12 +4,13 @@ import { SettingsManager, DEFAULT_SETTINGS } from '../src/viewer/settings.js';
 
 test('SettingsManager initializes with defaults when localStorage is empty', () => {
   const manager = new SettingsManager();
-  assert.equal(manager.get('wheelBehavior'), 'zoom');
+  assert.equal(manager.get('wheelBehavior'), 'page');
   assert.equal(manager.get('loopNavigation'), true);
   assert.equal(manager.get('recursiveScanning'), false);
   assert.equal(manager.get('filmstripMode'), 'hover');
   assert.equal(manager.get('showFilmstripByDefault'), false);
-  assert.equal(manager.get('doubleClickBehavior'), 'toggle-fit');
+  assert.equal(manager.get('doubleClickBehavior'), 'toggle-fullscreen');
+  assert.equal(manager.get('openImageScaleMode'), 'fit-if-larger');
   assert.equal(manager.get('backgroundTheme'), 'dark');
 });
 
@@ -23,10 +24,10 @@ test('SettingsManager updates single setting and emits change', () => {
     changedVal = val;
   });
 
-  manager.set('wheelBehavior', 'page');
-  assert.equal(manager.get('wheelBehavior'), 'page');
+  manager.set('wheelBehavior', 'zoom');
+  assert.equal(manager.get('wheelBehavior'), 'zoom');
   assert.equal(changedKey, 'wheelBehavior');
-  assert.equal(changedVal, 'page');
+  assert.equal(changedVal, 'zoom');
 });
 
 test('SettingsManager update patch applies multiple values', () => {
@@ -38,7 +39,7 @@ test('SettingsManager update patch applies multiple values', () => {
 
   assert.equal(manager.get('loopNavigation'), false);
   assert.equal(manager.get('showFilmstripByDefault'), true);
-  assert.equal(manager.get('wheelBehavior'), 'zoom'); // unchanged
+  assert.equal(manager.get('wheelBehavior'), 'page'); // unchanged
 });
 
 test('SettingsManager reset restores all defaults', () => {

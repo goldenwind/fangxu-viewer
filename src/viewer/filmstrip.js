@@ -24,16 +24,6 @@ export class Filmstrip {
     this.container.classList.add('viewer-filmstrip');
     this.container.innerHTML = `
       <div class="filmstrip-inner">
-        <div class="filmstrip-header">
-          <div class="filmstrip-header-left">
-            <span class="filmstrip-title">目录缩略图</span>
-            <span class="filmstrip-count">0 张</span>
-          </div>
-          <div class="filmstrip-header-right">
-            <span class="filmstrip-hint">点击快速切换</span>
-            <button class="filmstrip-close-btn" title="收起缩略图 (T)">×</button>
-          </div>
-        </div>
         <div class="filmstrip-track-wrapper">
           <div class="filmstrip-track"></div>
         </div>
@@ -42,22 +32,15 @@ export class Filmstrip {
 
     this.track = this.container.querySelector('.filmstrip-track');
     this.trackWrapper = this.container.querySelector('.filmstrip-track-wrapper');
-    this.countEl = this.container.querySelector('.filmstrip-count');
-    this.closeBtn = this.container.querySelector('.filmstrip-close-btn');
   }
 
   bindEvents() {
-    this.closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.isPinned = false;
-      this.toggle(false);
-    });
-
     // Horizontal wheel scroll on filmstrip
     this.trackWrapper.addEventListener('wheel', (e) => {
-      if (e.deltaY !== 0) {
+      if (e.deltaY !== 0 || e.deltaX !== 0) {
         e.preventDefault();
-        this.trackWrapper.scrollLeft += e.deltaY;
+        const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+        this.trackWrapper.scrollLeft += delta;
       }
     }, { passive: false });
 
@@ -65,6 +48,14 @@ export class Filmstrip {
     window.addEventListener('mousemove', (e) => {
       this.handleWindowMouseMove(e);
     });
+
+    // Re-center active item when container width changes
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.currentIndex >= 0) {
+        this.scrollToIndex(this.currentIndex, false);
+      }
+    });
+    this.resizeObserver.observe(this.trackWrapper);
   }
 
   getMode() {
@@ -85,9 +76,9 @@ export class Filmstrip {
       return;
     }
 
-    // In hover mode: trigger when mouse is within bottom 80px of window
+    // In hover mode: trigger when mouse is within bottom 84px of window
     const distFromBottom = window.innerHeight - e.clientY;
-    const isOverBottomArea = distFromBottom <= 80 || this.container.contains(e.target);
+    const isOverBottomArea = distFromBottom <= 84 || this.container.contains(e.target);
 
     if (isOverBottomArea) {
       if (this.hoverTimer) {
@@ -98,14 +89,14 @@ export class Filmstrip {
         this.show();
       }
     } else if (this.isVisible && !this.isPinned) {
-      // Mouse moved away from bottom area
-      if (distFromBottom > 140 && !this.hoverTimer) {
+      // Mouse moved away from bottom thumbnail area
+      if (distFromBottom > 88 && !this.hoverTimer) {
         this.hoverTimer = setTimeout(() => {
           this.hoverTimer = null;
           if (!this.isPinned && this.getMode() === 'hover') {
             this.hide();
           }
-        }, 550);
+        }, 400);
       }
     }
   }
@@ -113,13 +104,25 @@ export class Filmstrip {
   setImages(images, currentIndex = 0) {
     this.images = images || [];
     this.currentIndex = currentIndex;
-    this.countEl.textContent = `${this.images.length} 张`;
     this.renderThumbnails();
 
     const mode = this.getMode();
     if (mode === 'always' && this.images.length > 0) {
       this.show();
     }
+  }
+
+  scrollToIndex(index, smooth = true) {
+    if (!this.track || !this.trackWrapper) return;
+    const items = this.track.querySelectorAll('.filmstrip-item');
+    const item = items[index];
+    if (!item) return;
+
+    const targetLeft = item.offsetLeft + item.offsetWidth / 2 - this.trackWrapper.clientWidth / 2;
+    this.trackWrapper.scrollTo({
+      left: Math.max(0, targetLeft),
+      behavior: smooth ? 'smooth' : 'auto',
+    });
   }
 
   setCurrentIndex(index) {
@@ -130,11 +133,12 @@ export class Filmstrip {
     items.forEach((item, idx) => {
       if (idx === index) {
         item.classList.add('is-active');
-        item.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
       } else {
         item.classList.remove('is-active');
       }
     });
+
+    this.scrollToIndex(index, true);
   }
 
   renderThumbnails() {
@@ -144,7 +148,7 @@ export class Filmstrip {
     this.images.forEach((img, idx) => {
       const item = document.createElement('div');
       item.className = `filmstrip-item ${idx === this.currentIndex ? 'is-active' : ''}`;
-      item.title = `${img.name}\n序号: ${idx + 1} / ${this.images.length}\n点击快速查看`;
+      item.title = `${img.name}\n序号: ${idx + 1} / ${this.images.length}`;
 
       const thumbImg = document.createElement('img');
       thumbImg.className = 'filmstrip-thumb';
@@ -162,12 +166,7 @@ export class Filmstrip {
         }
       };
 
-      const label = document.createElement('div');
-      label.className = 'filmstrip-name';
-      label.textContent = img.name;
-
       item.appendChild(thumbImg);
-      item.appendChild(label);
 
       item.addEventListener('click', () => {
         if (this.onSelectImage) {
@@ -180,24 +179,17 @@ export class Filmstrip {
 
     this.track.appendChild(fragment);
 
-    // Scroll active item into view
     setTimeout(() => {
-      const active = this.track.querySelector('.filmstrip-item.is-active');
-      if (active) {
-        active.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
-      }
-    }, 50);
+      this.scrollToIndex(this.currentIndex, false);
+    }, 40);
   }
 
   show() {
     this.isVisible = true;
     this.container.classList.add('is-visible');
-    const active = this.track.querySelector('.filmstrip-item.is-active');
-    if (active) {
-      setTimeout(() => {
-        active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-      }, 100);
-    }
+    setTimeout(() => {
+      this.scrollToIndex(this.currentIndex, false);
+    }, 50);
   }
 
   hide() {
@@ -216,5 +208,11 @@ export class Filmstrip {
       this.hide();
     }
     return this.isVisible;
+  }
+
+  destroy() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+    }
   }
 }

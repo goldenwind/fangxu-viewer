@@ -1,0 +1,69 @@
+name: Release Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release Tag (e.g. v0.1.0)'
+        required: true
+        default: 'v0.1.0'
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - run: npm ci
+
+      - name: Build Windows installer with MSVC
+        run: npm run tauri build -- --bundles nsis --target x86_64-pc-windows-msvc
+
+      - name: Prepare Windows executables and installers
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $sourceExe = "src-tauri/target/x86_64-pc-windows-msvc/release/fangxu-viewer.exe"
+          $outDir = "release_windows"
+          New-Item -ItemType Directory -Force $outDir | Out-Null
+
+          if (Test-Path $sourceExe) {
+            Copy-Item $sourceExe "$outDir/方序看图_${version}_windows_x64.exe" -Force
+          }
+
+          Get-ChildItem -Path "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | ForEach-Object {
+            Copy-Item $_.FullName "$outDir/方序看图_${version}_x64-setup.exe" -Force
+          }
+
+      - name: Upload to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.event.inputs.tag }}") { "${{ github.event.inputs.tag }}" } else { "${{ github.event.release.tag_name }}" }
+          if (-not $tag) {
+            $tag = "v" + (node -p "require('./package.json').version")
+          }
+          Write-Host "Uploading Windows release assets to tag: $tag"
+          Get-ChildItem release_windows/*.* | ForEach-Object {
+            Write-Host "Uploading $($_.FullName)"
+            gh release upload $tag $_.FullName --clobber
+          }

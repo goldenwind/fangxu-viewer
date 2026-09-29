@@ -55,14 +55,14 @@ export class SettingsModal {
                   <label class="settings-radio-label">
                     <input type="radio" name="opt-wheel" value="zoom" />
                     <div class="radio-content">
-                      <strong>以鼠标光标为中心缩放（推荐）</strong>
+                      <strong>以鼠标光标为中心缩放</strong>
                       <span>滚动滚轮实时无级放大或缩小图片</span>
                     </div>
                   </label>
                   <label class="settings-radio-label">
                     <input type="radio" name="opt-wheel" value="page" />
                     <div class="radio-content">
-                      <strong>翻页浏览同目录图片</strong>
+                      <strong>翻页浏览同目录图片（推荐）</strong>
                       <span>向下滚动翻至下一张，向上滚动翻至上一张</span>
                     </div>
                   </label>
@@ -75,15 +75,42 @@ export class SettingsModal {
                   <label class="settings-radio-label">
                     <input type="radio" name="opt-dblclick" value="toggle-fit" />
                     <div class="radio-content">
-                      <strong>适应窗口 与 1:1 实际尺寸切换（推荐）</strong>
+                      <strong>适应窗口 与 1:1 实际尺寸切换</strong>
                       <span>双击图片在最佳适应比例与原始高像素间快速切换</span>
                     </div>
                   </label>
                   <label class="settings-radio-label">
                     <input type="radio" name="opt-dblclick" value="toggle-fullscreen" />
                     <div class="radio-content">
-                      <strong>进入 / 退出全屏看图模式</strong>
+                      <strong>进入 / 退出全屏看图模式（推荐）</strong>
                       <span>双击窗口在全屏与普通窗口间自由切换</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div class="settings-section">
+                <div class="settings-section-title">打开图片初始大小</div>
+                <div class="settings-radio-group">
+                  <label class="settings-radio-label">
+                    <input type="radio" name="opt-scale-mode" value="fit-if-larger" />
+                    <div class="radio-content">
+                      <strong>默认 1:1，超出窗口则适应（推荐）</strong>
+                      <span>小图保持 100% 原始尺寸居中显示，大图自动缩小适应窗口</span>
+                    </div>
+                  </label>
+                  <label class="settings-radio-label">
+                    <input type="radio" name="opt-scale-mode" value="fit-window" />
+                    <div class="radio-content">
+                      <strong>始终适应窗口</strong>
+                      <span>大图缩小适应窗口，小图也会拉伸铺满窗口</span>
+                    </div>
+                  </label>
+                  <label class="settings-radio-label">
+                    <input type="radio" name="opt-scale-mode" value="original" />
+                    <div class="radio-content">
+                      <strong>始终 1:1 实际尺寸</strong>
+                      <span>无论图片大小，打开时均以 100% 原始大小呈现</span>
                     </div>
                   </label>
                 </div>
@@ -173,6 +200,7 @@ export class SettingsModal {
     this.tabPanes = this.container.querySelectorAll('.settings-tab-pane');
 
     this.wheelRadios = this.container.querySelectorAll('input[name="opt-wheel"]');
+    this.scaleModeRadios = this.container.querySelectorAll('input[name="opt-scale-mode"]');
     this.loopNavCheck = this.container.querySelector('#opt-loop-nav');
     this.recursiveScanCheck = this.container.querySelector('#opt-recursive-scan');
     this.filmstripModeSelect = this.container.querySelector('#opt-filmstrip-mode');
@@ -190,6 +218,18 @@ export class SettingsModal {
         this.close();
       }
     });
+
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Escape' && this.isOpen) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.close();
+        }
+      },
+      true
+    );
 
     // Tab switching
     this.tabButtons.forEach((btn) => {
@@ -212,6 +252,12 @@ export class SettingsModal {
     this.wheelRadios.forEach((r) => {
       r.addEventListener('change', () => {
         if (r.checked) this.updateSetting('wheelBehavior', r.value);
+      });
+    });
+
+    this.scaleModeRadios.forEach((r) => {
+      r.addEventListener('change', () => {
+        if (r.checked) this.updateSetting('openImageScaleMode', r.value);
       });
     });
 
@@ -265,6 +311,11 @@ export class SettingsModal {
 
     this.wheelRadios.forEach((r) => {
       r.checked = r.value === s.wheelBehavior;
+    });
+
+    const scaleMode = s.openImageScaleMode || 'fit-if-larger';
+    this.scaleModeRadios.forEach((r) => {
+      r.checked = r.value === scaleMode;
     });
 
     this.loopNavCheck.checked = !!s.loopNavigation;

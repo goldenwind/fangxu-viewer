@@ -1,5 +1,5 @@
 /**
- * CanvasView: High-performance pan & zoom image viewport with 2345-style interaction
+ * CanvasView: High-performance pan & zoom image viewport
  */
 export class CanvasView {
   constructor({ container, settingsManager, onTransformChange, onWheelPage, onToggleFullscreen }) {
@@ -17,6 +17,7 @@ export class CanvasView {
     this.flipH = false;
     this.flipV = false;
     this.isFitMode = true;
+    this.isAutoFit = true;
 
     this.lastWheelPageTime = 0;
 
@@ -64,7 +65,18 @@ export class CanvasView {
 
     // Resize observer to update fit scale when window resizes
     this.resizeObserver = new ResizeObserver(() => {
-      if (this.hasImage && this.isFitMode) {
+      if (!this.hasImage) return;
+      if (this.isAutoFit) {
+        this.fitScale = this.calculateFitScale();
+        if (this.fitScale < 1.0) {
+          this.scale = this.fitScale;
+          this.isFitMode = true;
+        } else {
+          this.scale = 1.0;
+          this.isFitMode = false;
+        }
+        this.applyTransform(false);
+      } else if (this.isFitMode) {
         this.fitToWindow(false);
       }
     });
@@ -81,7 +93,7 @@ export class CanvasView {
     const onLoad = () => {
       this.naturalWidth = naturalWidth || this.img.naturalWidth || 800;
       this.naturalHeight = naturalHeight || this.img.naturalHeight || 600;
-      this.fitToWindow(false);
+      this.applyInitialScale(false);
     };
 
     this.img.onload = onLoad;
@@ -139,6 +151,37 @@ export class CanvasView {
     return Math.min(scaleW, scaleH);
   }
 
+  applyInitialScale(smooth = false) {
+    if (!this.hasImage) return;
+    this.fitScale = this.calculateFitScale();
+    const mode = this.settingsManager ? this.settingsManager.get('openImageScaleMode') : 'fit-if-larger';
+
+    this.translateX = 0;
+    this.translateY = 0;
+
+    if (mode === 'original') {
+      this.scale = 1.0;
+      this.isFitMode = false;
+      this.isAutoFit = false;
+    } else if (mode === 'fit-window') {
+      this.scale = this.fitScale;
+      this.isFitMode = true;
+      this.isAutoFit = false;
+    } else {
+      // 'fit-if-larger' (default): 默认 1:1，如果超出了窗口则适应窗口
+      if (this.fitScale < 1.0) {
+        this.scale = this.fitScale;
+        this.isFitMode = true;
+      } else {
+        this.scale = 1.0;
+        this.isFitMode = false;
+      }
+      this.isAutoFit = true;
+    }
+
+    this.applyTransform(smooth);
+  }
+
   fitToWindow(smooth = false) {
     if (!this.hasImage) return;
     this.fitScale = this.calculateFitScale();
@@ -146,6 +189,7 @@ export class CanvasView {
     this.translateX = 0;
     this.translateY = 0;
     this.isFitMode = true;
+    this.isAutoFit = false;
     this.applyTransform(smooth);
   }
 
@@ -155,6 +199,7 @@ export class CanvasView {
     this.translateX = 0;
     this.translateY = 0;
     this.isFitMode = false;
+    this.isAutoFit = false;
     this.applyTransform(smooth);
   }
 
@@ -168,6 +213,7 @@ export class CanvasView {
     if (newScale === oldScale) return;
 
     this.isFitMode = false;
+    this.isAutoFit = false;
 
     if (focalPoint) {
       // Zoom centered on focal point (cursor)
@@ -198,7 +244,9 @@ export class CanvasView {
 
   rotateLeft() {
     this.rotation = (this.rotation - 90 + 360) % 360;
-    if (this.isFitMode) {
+    if (this.isAutoFit) {
+      this.applyInitialScale(true);
+    } else if (this.isFitMode) {
       this.fitToWindow(true);
     } else {
       this.applyTransform(true);
@@ -207,7 +255,9 @@ export class CanvasView {
 
   rotateRight() {
     this.rotation = (this.rotation + 90) % 360;
-    if (this.isFitMode) {
+    if (this.isAutoFit) {
+      this.applyInitialScale(true);
+    } else if (this.isFitMode) {
       this.fitToWindow(true);
     } else {
       this.applyTransform(true);
@@ -228,7 +278,14 @@ export class CanvasView {
     if (!this.hasImage) return;
     e.preventDefault();
 
-    const behavior = this.settingsManager ? this.settingsManager.get('wheelBehavior') : 'zoom';
+    // Cmd (macOS) or Ctrl + scroll wheel ALWAYS zooms centered on cursor
+    if (e.metaKey || e.ctrlKey) {
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.869;
+      this.zoomBy(zoomFactor, { x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    const behavior = this.settingsManager ? this.settingsManager.get('wheelBehavior') : 'page';
 
     if (behavior === 'page') {
       const now = Date.now();
@@ -243,7 +300,7 @@ export class CanvasView {
       return;
     }
 
-    // Default: zoom centered on cursor
+    // Zoom centered on cursor
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.869;
     this.zoomBy(zoomFactor, { x: e.clientX, y: e.clientY });
   }
@@ -265,6 +322,7 @@ export class CanvasView {
     this.translateX = this.initialTranslateX + deltaX;
     this.translateY = this.initialTranslateY + deltaY;
     this.isFitMode = false;
+    this.isAutoFit = false;
     this.applyTransform(false);
   }
 
@@ -286,13 +344,19 @@ export class CanvasView {
       return;
     }
 
-    // Default 2345 behavior: toggle between Fit mode and 1:1 Actual Size
-    if (this.isFitMode || Math.abs(this.scale - this.fitScale) < 0.05) {
+    // Toggle between Fit mode and 1:1 Actual Size
+    this.fitScale = this.calculateFitScale();
+    const isCurrently1to1 = Math.abs(this.scale - 1.0) < 0.02;
+
+    if (isCurrently1to1) {
+      this.fitToWindow(true);
+    } else {
       // Zoom to 1:1 focused on cursor
       const focalPoint = { x: e.clientX, y: e.clientY };
       const oldScale = this.scale;
       this.scale = 1.0;
       this.isFitMode = false;
+      this.isAutoFit = false;
 
       const rect = this.viewport.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
@@ -303,8 +367,6 @@ export class CanvasView {
       this.translateX = mouseRelCenterX - (mouseRelCenterX - this.translateX) * (1.0 / oldScale);
       this.translateY = mouseRelCenterY - (mouseRelCenterY - this.translateY) * (1.0 / oldScale);
       this.applyTransform(true);
-    } else {
-      this.fitToWindow(true);
     }
   }
 

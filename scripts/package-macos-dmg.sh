@@ -28,6 +28,8 @@ detach_image() {
   device_name=''
 }
 
+icon_path="$project_root/src-tauri/icons/icon.icns"
+
 cleanup() {
   if [ -n "$device_name" ]; then
     detach_image || true
@@ -36,9 +38,8 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if [ ! -d "$app_path" ]; then
-  echo "未找到应用包：$app_path" >&2
-  echo "正在自动执行 npm run tauri -- build --bundles app ..." >&2
+if [ ! -d "$app_path" ] || [ "$icon_path" -nt "$app_path" ]; then
+  echo "应用包不存在或图标已更新，正在重新构建应用包..." >&2
   npm run tauri -- build --bundles app
 fi
 
@@ -51,6 +52,9 @@ mkdir -p "$output_dir"
 mkdir -p "$staging_dir"
 ditto "$app_path" "$staging_dir/$product_name.app"
 ln -s /Applications "$staging_dir/Applications"
+if [ -f "$icon_path" ]; then
+  cp "$icon_path" "$staging_dir/.VolumeIcon.icns"
+fi
 
 hdiutil create -quiet \
   -volname "$product_name $version" \
@@ -73,6 +77,12 @@ mount_dir=$(printf '%s\n' "$attach_output" | awk -F '\t' '/Apple_HFS/ { print $N
 if [ -z "$device_name" ] || [ -z "$mount_dir" ]; then
   echo "无法挂载临时磁盘映像。" >&2
   exit 1
+fi
+
+if [ -f "$icon_path" ]; then
+  cp "$icon_path" "$mount_dir/.VolumeIcon.icns"
+  SetFile -c icnC "$mount_dir/.VolumeIcon.icns" 2>/dev/null || true
+  SetFile -a C "$mount_dir" 2>/dev/null || true
 fi
 
 volume_name=$(basename "$mount_dir")
@@ -131,5 +141,19 @@ hdiutil convert -quiet \
   -format UDZO \
   -imagekey zlib-level=9 \
   -o "$output_path"
+
+if [ -f "$icon_path" ] && [ -f "$output_path" ]; then
+  swift -e '
+import Cocoa
+let args = CommandLine.arguments
+if args.count >= 3 {
+  let iconPath = args[1]
+  let filePath = args[2]
+  if let image = NSImage(contentsOfFile: iconPath) {
+    _ = NSWorkspace.shared.setIcon(image, forFile: filePath, options: [])
+  }
+}
+' "$icon_path" "$output_path" 2>/dev/null || true
+fi
 
 echo "DMG 安装包已成功生成：$output_path"

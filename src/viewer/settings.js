@@ -3,12 +3,13 @@
  */
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  wheelBehavior: 'zoom', // 'zoom' | 'page'
+  wheelBehavior: 'page', // 'page' (默认翻页，⌘+滚轮缩放) | 'zoom'
   loopNavigation: true, // boolean: whether to wrap around folder images
   recursiveScanning: false, // boolean: whether to recursively scan subfolder images
   filmstripMode: 'hover', // 'hover' (auto-show on bottom mouse hover) | 'always' | 'manual'
   showFilmstripByDefault: false, // boolean: legacy compatibility
-  doubleClickBehavior: 'toggle-fit', // 'toggle-fit' | 'toggle-fullscreen'
+  doubleClickBehavior: 'toggle-fullscreen', // 'toggle-fit' | 'toggle-fullscreen'
+  openImageScaleMode: 'fit-if-larger', // 'fit-if-larger' (默认 1:1，超出则适应) | 'fit-window' | 'original'
   backgroundTheme: 'dark', // 'dark' | 'checkerboard' | 'black' | 'light'
   slideshowInterval: 3000, // ms: 1500, 3000, 5000, 8000
 });

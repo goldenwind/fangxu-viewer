@@ -61,14 +61,27 @@ function confirmDialog(message) {
         </div>
       </div>
     `;
-    document.body.appendChild(overlay);
+    const cleanup = () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      overlay.remove();
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        cleanup();
+        resolve(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
 
     overlay.querySelector('#confirm-cancel').addEventListener('click', () => {
-      overlay.remove();
+      cleanup();
       resolve(false);
     });
     overlay.querySelector('#confirm-ok').addEventListener('click', () => {
-      overlay.remove();
+      cleanup();
       resolve(true);
     });
   });
@@ -192,7 +205,7 @@ uiToolbar = new UIToolbar({
   },
 });
 
-// 9. Initialize 2345 Right-Click Context Menu
+// 9. Initialize Right-Click Context Menu
 const contextMenu = new ContextMenu({
   controller,
   onOpenSettings: () => {
@@ -203,7 +216,97 @@ const contextMenu = new ContextMenu({
 // Listen to native macOS menu actions
 listen('menu-action', (event) => {
   const action = event.payload;
-  contextMenu.handleAction(action);
+  handleMenuAction(action);
+});
+
+function handleMenuAction(action) {
+  if (!controller) return;
+
+  switch (action) {
+    case 'open':
+      controller.openFileDialog();
+      break;
+    case 'save_as':
+    case 'save-as':
+      controller.saveAs();
+      break;
+    case 'reveal':
+      controller.revealInFileManager();
+      break;
+    case 'trash':
+      controller.deleteCurrentImage();
+      break;
+    case 'copy':
+      controller.copyToClipboard();
+      break;
+    case 'prev':
+      controller.prevImage();
+      break;
+    case 'next':
+      controller.nextImage();
+      break;
+    case 'actual_size':
+    case 'actual':
+      controller.actualSize();
+      break;
+    case 'fit_window':
+    case 'fit':
+      controller.fitWindow();
+      break;
+    case 'zoom_in':
+    case 'zoom-in':
+      controller.zoomIn();
+      break;
+    case 'zoom_out':
+    case 'zoom-out':
+      controller.zoomOut();
+      break;
+    case 'rotate_left':
+    case 'rotate-left':
+      controller.rotateLeft();
+      break;
+    case 'rotate_right':
+    case 'rotate-right':
+      controller.rotateRight();
+      break;
+    case 'flip_h':
+    case 'flip-h':
+      controller.flipH();
+      break;
+    case 'toggle_filmstrip':
+    case 'filmstrip':
+      controller.toggleFilmstrip();
+      break;
+    case 'toggle_exif':
+    case 'exif':
+      controller.toggleExif();
+      break;
+    case 'slideshow':
+      controller.toggleSlideshow();
+      break;
+    case 'fullscreen':
+      controller.toggleFullscreen();
+      break;
+    case 'maximize':
+      invoke('toggle_maximize_window').catch(() => {});
+      break;
+    case 'settings':
+      if (settingsModal) settingsModal.open();
+      break;
+    case 'help':
+      if (uiToolbar) uiToolbar.showHelpModal();
+      break;
+    default:
+      contextMenu.handleAction(action);
+      break;
+  }
+}
+
+// Lock page-level scroll to ensure the topbar never gets pushed off-screen
+window.addEventListener('scroll', () => {
+  if (window.scrollX !== 0 || window.scrollY !== 0) {
+    window.scrollTo(0, 0);
+  }
 });
 
 // Apply initial user preferences

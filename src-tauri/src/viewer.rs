@@ -5,10 +5,19 @@ use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
+#[cfg(not(target_os = "macos"))]
+use tauri::{PhysicalPosition, PhysicalSize};
+
+#[cfg(not(target_os = "macos"))]
+static PRE_MAX_BOUNDS: Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>> = Mutex::new(None);
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "ico", "tiff", "tif", "avif", "heic", "heif", "jfif"
+    "jpg", "jpeg", "jpe", "jfif", "png", "apng", "gif", "webp", "bmp", "dib",
+    "svg", "svgz", "ico", "cur", "tiff", "tif", "avif", "heic", "heif",
+    "tga", "icb", "vda", "vst", "dds", "hdr",
+    "pnm", "pbm", "pgm", "ppm", "pam", "qoi", "exr", "ff"
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,19 +297,43 @@ pub async fn read_image_as_data_url(file_path: String) -> Result<String, String>
         let path = PathBuf::from(&file_path);
         let bytes = fs::read(&path).map_err(|e| format!("读取图片文件失败: {e}"))?;
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-        let mime = match ext.as_str() {
-            "jpg" | "jpeg" | "jfif" => "image/jpeg",
-            "png" => "image/png",
-            "gif" => "image/gif",
-            "webp" => "image/webp",
-            "bmp" => "image/bmp",
-            "svg" => "image/svg+xml",
-            "ico" => "image/x-icon",
-            "tiff" | "tif" => "image/tiff",
-            "avif" => "image/avif",
-            _ => "application/octet-stream",
-        };
-        Ok(format!("data:{};base64,{}", mime, BASE64.encode(bytes)))
+
+        let is_browser_native = matches!(
+            ext.as_str(),
+            "jpg" | "jpeg" | "jpe" | "jfif" | "png" | "apng" | "gif" | "webp" | "svg" | "svgz" | "bmp" | "dib" | "ico" | "cur" | "avif" | "heic" | "heif"
+        );
+
+        if is_browser_native {
+            let mime = match ext.as_str() {
+                "jpg" | "jpeg" | "jpe" | "jfif" => "image/jpeg",
+                "png" | "apng" => "image/png",
+                "gif" => "image/gif",
+                "webp" => "image/webp",
+                "bmp" | "dib" => "image/bmp",
+                "svg" | "svgz" => "image/svg+xml",
+                "ico" | "cur" => "image/x-icon",
+                "avif" => "image/avif",
+                "heic" => "image/heic",
+                "heif" => "image/heif",
+                _ => "application/octet-stream",
+            };
+            return Ok(format!("data:{};base64,{}", mime, BASE64.encode(bytes)));
+        }
+
+        // For non-browser native formats (tga, dds, hdr, pnm, qoi, exr, ff, tiff on non-mac, etc.),
+        // decode using the image crate and encode into PNG data URL so WebView can seamlessly display it.
+        if let Ok(img) = image::open(&path) {
+            let mut buf = std::io::Cursor::new(Vec::new());
+            if img.write_to(&mut buf, image::ImageFormat::Png).is_ok() {
+                return Ok(format!("data:image/png;base64,{}", BASE64.encode(buf.into_inner())));
+            }
+        }
+
+        if ext == "tiff" || ext == "tif" {
+            return Ok(format!("data:image/tiff;base64,{}", BASE64.encode(bytes)));
+        }
+
+        Ok(format!("data:application/octet-stream;base64,{}", BASE64.encode(bytes)))
     })
     .await
     .map_err(|e| format!("读取 Data URL 失败: {e}"))?
@@ -441,14 +474,109 @@ pub fn minimize_window(window: tauri::Window) -> Result<(), String> {
     window.minimize().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn toggle_maximize_window(window: tauri::Window) -> Result<bool, String> {
-    let is_max = window.is_maximized().map_err(|e| e.to_string())?;
-    if is_max {
-        window.unmaximize().map_err(|e| e.to_string())?;
+#[cfg(target_os = "macos")]
+static PRE_MAX_FRAME: Mutex<Option<objc2_foundation::NSRect>> = Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+fn toggle_maximize_macos(window: &tauri::Window) -> Result<bool, String> {
+    use objc2_app_kit::NSWindow;
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+    let ptr = window.ns_window().map_err(|e| e.to_string())? as *mut NSWindow;
+    if ptr.is_null() {
+        return Err("NSWindow is null".to_string());
+    }
+    let ns_win = unsafe { &*ptr };
+
+    let screen = match ns_win.screen() {
+        Some(s) => s,
+        None => return Err("Cannot get screen".to_string()),
+    };
+
+    let vis_frame = screen.visibleFrame();
+    let current_frame = ns_win.frame();
+
+    // Check if the window is currently covering the visible work area
+    let is_already_max = (current_frame.origin.x - vis_frame.origin.x).abs() < 4.0
+        && (current_frame.origin.y - vis_frame.origin.y).abs() < 4.0
+        && (current_frame.size.width - vis_frame.size.width).abs() < 4.0
+        && (current_frame.size.height - vis_frame.size.height).abs() < 4.0;
+
+    let mut lock = PRE_MAX_FRAME.lock().map_err(|e| e.to_string())?;
+
+    if is_already_max {
+        // Restore to previous frame or a sensible default within the visible frame
+        let target_frame = if let Some(saved) = lock.take() {
+            let w = saved.size.width.clamp(480.0, vis_frame.size.width);
+            let h = saved.size.height.clamp(360.0, vis_frame.size.height);
+            let x = saved.origin.x.clamp(
+                vis_frame.origin.x,
+                (vis_frame.origin.x + vis_frame.size.width - w).max(vis_frame.origin.x),
+            );
+            let y = saved.origin.y.clamp(
+                vis_frame.origin.y,
+                (vis_frame.origin.y + vis_frame.size.height - h).max(vis_frame.origin.y),
+            );
+            NSRect {
+                origin: NSPoint { x, y },
+                size: NSSize { width: w, height: h },
+            }
+        } else {
+            let default_w = 1200.0f64.min(vis_frame.size.width - 80.0).max(640.0);
+            let default_h = 800.0f64.min(vis_frame.size.height - 80.0).max(480.0);
+            let x = vis_frame.origin.x + (vis_frame.size.width - default_w) / 2.0;
+            let y = vis_frame.origin.y + (vis_frame.size.height - default_h) / 2.0;
+            NSRect {
+                origin: NSPoint { x, y },
+                size: NSSize { width: default_w, height: default_h },
+            }
+        };
+
+        ns_win.setFrame_display_animate(target_frame, true, true);
         Ok(false)
     } else {
-        window.maximize().map_err(|e| e.to_string())?;
+        // Save current frame before maximizing
+        *lock = Some(current_frame);
+        ns_win.setFrame_display_animate(vis_frame, true, true);
+        Ok(true)
+    }
+}
+
+#[tauri::command]
+pub fn toggle_maximize_window(window: tauri::Window) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        return toggle_maximize_macos(&window);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut bounds_lock = PRE_MAX_BOUNDS.lock().map_err(|e| e.to_string())?;
+        if let Some((pos, size)) = bounds_lock.take() {
+            let _ = window.unmaximize();
+            let _ = window.set_position(pos);
+            let _ = window.set_size(size);
+            return Ok(false);
+        }
+
+        let is_max = window.is_maximized().unwrap_or(false);
+        if is_max {
+            let _ = window.unmaximize();
+            return Ok(false);
+        }
+
+        let curr_pos = window.outer_position().map_err(|e| e.to_string())?;
+        let curr_size = window.outer_size().map_err(|e| e.to_string())?;
+        *bounds_lock = Some((curr_pos, curr_size));
+
+        if let Ok(Some(monitor)) = window.current_monitor() {
+            let mon_size = monitor.size();
+            let mon_pos = monitor.position();
+            let _ = window.set_position(*mon_pos);
+            let _ = window.set_size(*mon_size);
+        } else {
+            let _ = window.maximize();
+        }
         Ok(true)
     }
 }

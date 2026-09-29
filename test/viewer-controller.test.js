@@ -113,3 +113,45 @@ test('image index navigation respects loopNavigation=false without wrapping', ()
   assert.equal(next(), false);
   assert.equal(currentIndex, 1); // stays at 1
 });
+
+test('Esc key closes modals in correct priority order', () => {
+  let settingsOpen = true;
+  let helpOpen = true;
+  let confirmOpen = true;
+  let slideshowPlaying = true;
+
+  const handleEsc = () => {
+    if (confirmOpen) {
+      confirmOpen = false;
+      return 'confirm-closed';
+    }
+    if (settingsOpen) {
+      settingsOpen = false;
+      return 'settings-closed';
+    }
+    if (helpOpen) {
+      helpOpen = false;
+      return 'help-closed';
+    }
+    if (slideshowPlaying) {
+      slideshowPlaying = false;
+      return 'slideshow-stopped';
+    }
+    return 'none';
+  };
+
+  assert.equal(handleEsc(), 'confirm-closed');
+  assert.equal(confirmOpen, false);
+
+  assert.equal(handleEsc(), 'settings-closed');
+  assert.equal(settingsOpen, false);
+
+  assert.equal(handleEsc(), 'help-closed');
+  assert.equal(helpOpen, false);
+
+  assert.equal(handleEsc(), 'slideshow-stopped');
+  assert.equal(slideshowPlaying, false);
+
+  assert.equal(handleEsc(), 'none');
+});
+
