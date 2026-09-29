@@ -5,7 +5,9 @@
 export const DEFAULT_SETTINGS = Object.freeze({
   wheelBehavior: 'zoom', // 'zoom' | 'page'
   loopNavigation: true, // boolean: whether to wrap around folder images
-  showFilmstripByDefault: false, // boolean: whether to show bottom thumbnail strip by default
+  recursiveScanning: false, // boolean: whether to recursively scan subfolder images
+  filmstripMode: 'hover', // 'hover' (auto-show on bottom mouse hover) | 'always' | 'manual'
+  showFilmstripByDefault: false, // boolean: legacy compatibility
   doubleClickBehavior: 'toggle-fit', // 'toggle-fit' | 'toggle-fullscreen'
   backgroundTheme: 'dark', // 'dark' | 'checkerboard' | 'black' | 'light'
   slideshowInterval: 3000, // ms: 1500, 3000, 5000, 8000

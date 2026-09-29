@@ -117,24 +117,8 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     a_chunks.len().cmp(&b_chunks.len()).then_with(|| a.cmp(b))
 }
 
-#[tauri::command]
-pub async fn scan_folder_images(target_path: String) -> Result<FolderScanResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let p = PathBuf::from(&target_path);
-        let (dir_path, target_file) = if p.is_dir() {
-            (p, None)
-        } else {
-            let parent = p.parent().ok_or_else(|| "无法获取文件所在目录".to_string())?;
-            (parent.to_path_buf(), Some(p))
-        };
-
-        if !dir_path.exists() {
-            return Err("目录不存在".to_string());
-        }
-
-        let mut entries = Vec::new();
-        let read_dir = fs::read_dir(&dir_path).map_err(|e| format!("读取目录失败: {e}"))?;
-
+fn collect_images_recursively(dir: &Path, entries: &mut Vec<ImageItem>, recursive: bool) {
+    if let Ok(read_dir) = fs::read_dir(dir) {
         for entry in read_dir.flatten() {
             let path = entry.path();
             if path.is_file() && is_supported_image(&path) {
@@ -156,8 +140,38 @@ pub async fn scan_folder_images(target_path: String) -> Result<FolderScanResult,
                     size_bytes,
                     modified_ms,
                 });
+            } else if recursive && path.is_dir() {
+                if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+                    if !dir_name.starts_with('.') {
+                        collect_images_recursively(&path, entries, true);
+                    }
+                }
             }
         }
+    }
+}
+
+#[tauri::command]
+pub async fn scan_folder_images(
+    target_path: String,
+    recursive: Option<bool>,
+) -> Result<FolderScanResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = PathBuf::from(&target_path);
+        let (dir_path, target_file) = if p.is_dir() {
+            (p, None)
+        } else {
+            let parent = p.parent().ok_or_else(|| "无法获取文件所在目录".to_string())?;
+            (parent.to_path_buf(), Some(p))
+        };
+
+        if !dir_path.exists() {
+            return Err("目录不存在".to_string());
+        }
+
+        let is_recursive = recursive.unwrap_or(false);
+        let mut entries = Vec::new();
+        collect_images_recursively(&dir_path, &mut entries, is_recursive);
 
         // Sort naturally
         entries.sort_by(|a, b| natural_cmp(&a.name, &b.name));
@@ -474,5 +488,26 @@ mod tests {
         assert!(is_supported_image("test.avif"));
         assert!(!is_supported_image("test.exe"));
         assert!(!is_supported_image("test.txt"));
+    }
+
+    #[test]
+    fn test_collect_images_recursively() {
+        let temp_dir = std::env::temp_dir().join(format!("test_fx_viewer_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let sub_dir = temp_dir.join("subdir");
+        fs::create_dir_all(&sub_dir).unwrap();
+
+        fs::write(temp_dir.join("root.jpg"), b"fake_jpg").unwrap();
+        fs::write(sub_dir.join("sub.png"), b"fake_png").unwrap();
+
+        let mut non_rec_entries = Vec::new();
+        collect_images_recursively(&temp_dir, &mut non_rec_entries, false);
+        assert_eq!(non_rec_entries.len(), 1);
+        assert_eq!(non_rec_entries[0].name, "root.jpg");
+
+        let mut rec_entries = Vec::new();
+        collect_images_recursively(&temp_dir, &mut rec_entries, true);
+        assert_eq!(rec_entries.len(), 2);
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

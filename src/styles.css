@@ -952,6 +952,11 @@ kbd {
   animation: settings-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.settings-card.settings-card-horizontal {
+  width: min(680px, calc(100vw - 32px));
+  height: 480px;
+}
+
 @keyframes settings-in {
   from {
     opacity: 0;
@@ -967,9 +972,10 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.02);
+  flex-shrink: 0;
 }
 
 .settings-header-title {
@@ -1003,13 +1009,82 @@ kbd {
   background: var(--bg-bar-hover);
 }
 
-.settings-body {
-  padding: 20px;
-  overflow-y: auto;
-  max-height: calc(85vh - 120px);
+/* Horizontal Layout */
+.settings-horizontal-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-sidebar {
+  width: 170px;
+  background: rgba(0, 0, 0, 0.25);
+  border-right: 1px solid var(--border-subtle);
+  padding: 14px 8px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.settings-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: left;
+  transition: all 0.15s ease;
+  border-left: 3px solid transparent;
+}
+
+.settings-tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-tab-btn.is-active {
+  color: var(--text-primary);
+  background: rgba(56, 189, 248, 0.12);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-tab-btn svg {
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.settings-content-wrapper {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.settings-tab-pane {
+  display: none;
+  flex-direction: column;
+  gap: 18px;
+  animation: tab-in 0.15s ease;
+}
+
+.settings-tab-pane.is-active {
+  display: flex;
+}
+
+@keyframes tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .settings-section {
@@ -1019,7 +1094,7 @@ kbd {
 }
 
 .settings-section-title {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1120,9 +1195,10 @@ kbd {
   justify-content: flex-end;
   align-items: center;
   gap: 10px;
-  padding: 14px 20px;
+  padding: 12px 20px;
   border-top: 1px solid var(--border-subtle);
   background: rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
 }
 
 .settings-secondary-btn {
@@ -1157,4 +1233,97 @@ kbd {
 .settings-primary-btn:hover {
   filter: brightness(1.12);
   box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+
+/* 2345 Context Menu */
+.viewer-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  background: rgba(26, 26, 30, 0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-active);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
+  animation: context-menu-in 0.12s ease;
+}
+
+@keyframes context-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.context-menu-item:hover {
+  background: var(--accent);
+  color: #090d16;
+  font-weight: 500;
+}
+
+.context-menu-item .item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: inherit;
+}
+
+.context-menu-item .item-text {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.context-menu-item .item-shortcut {
+  font-size: 10.5px;
+  opacity: 0.6;
+  white-space: nowrap;
+  margin-left: 12px;
+  font-family: inherit;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 6px;
+}
+
+.context-menu-item.item-danger:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.filmstrip-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filmstrip-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filmstrip-hint {
+  font-size: 10px;
+  color: var(--text-dim);
 }

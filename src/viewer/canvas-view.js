@@ -71,12 +71,11 @@ export class CanvasView {
     this.resizeObserver.observe(this.container);
   }
 
-  setImage(src, naturalWidth = 0, naturalHeight = 0) {
+  setImage(src, naturalWidth = 0, naturalHeight = 0, onFallback = null) {
     this.hasImage = true;
     this.rotation = 0;
     this.flipH = false;
     this.flipV = false;
-    this.img.src = src;
 
     // Once loaded or when natural sizes are known
     const onLoad = () => {
@@ -85,10 +84,25 @@ export class CanvasView {
       this.fitToWindow(false);
     };
 
+    this.img.onload = onLoad;
+    this.img.onerror = async () => {
+      if (onFallback) {
+        try {
+          const fallbackSrc = await onFallback();
+          if (fallbackSrc && fallbackSrc !== this.img.src) {
+            this.img.onerror = null;
+            this.img.src = fallbackSrc;
+          }
+        } catch (e) {
+          console.error('备用图片加载失败:', e);
+        }
+      }
+    };
+
+    this.img.src = src;
+
     if (this.img.complete && this.img.naturalWidth) {
       onLoad();
-    } else {
-      this.img.onload = onLoad;
     }
   }
 

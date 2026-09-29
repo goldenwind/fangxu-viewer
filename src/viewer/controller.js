@@ -54,7 +54,8 @@ export class ViewerController {
     this.notifyState();
 
     try {
-      const scanResult = await invoke('scan_folder_images', { targetPath: filePathOrDir });
+      const recursive = this.settingsManager ? !!this.settingsManager.get('recursiveScanning') : false;
+      const scanResult = await invoke('scan_folder_images', { targetPath: filePathOrDir, recursive });
       this.folderPath = scanResult.folderPath;
       this.images = scanResult.images || [];
 
@@ -106,7 +107,12 @@ export class ViewerController {
 
     this.currentMetadata = meta;
     this.exifDrawer.setMetadata(meta);
-    this.canvasView.setImage(src, meta.width, meta.height);
+    this.canvasView.setImage(
+      src,
+      meta.width,
+      meta.height,
+      () => invoke('read_image_as_data_url', { filePath: imgItem.path })
+    );
 
     this.notifyState();
   }
@@ -265,11 +271,43 @@ export class ViewerController {
   }
 
   toggleFilmstrip() {
-    return this.filmstrip.toggle();
+    return this.filmstrip.toggle(null, true);
   }
 
   toggleExif() {
     return this.exifDrawer.toggle();
+  }
+
+  fitWindow() {
+    this.canvasView.fitToWindow(true);
+  }
+
+  actualSize() {
+    this.canvasView.actualSize(true);
+  }
+
+  zoomIn() {
+    this.canvasView.zoomIn();
+  }
+
+  zoomOut() {
+    this.canvasView.zoomOut();
+  }
+
+  rotateRight() {
+    this.canvasView.rotateRight();
+  }
+
+  rotateLeft() {
+    this.canvasView.rotateLeft();
+  }
+
+  flipH() {
+    this.canvasView.flipHorizontal();
+  }
+
+  flipV() {
+    this.canvasView.flipVertical();
   }
 
   notifyState() {

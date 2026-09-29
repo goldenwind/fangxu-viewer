@@ -6,6 +6,8 @@ test('SettingsManager initializes with defaults when localStorage is empty', () 
   const manager = new SettingsManager();
   assert.equal(manager.get('wheelBehavior'), 'zoom');
   assert.equal(manager.get('loopNavigation'), true);
+  assert.equal(manager.get('recursiveScanning'), false);
+  assert.equal(manager.get('filmstripMode'), 'hover');
   assert.equal(manager.get('showFilmstripByDefault'), false);
   assert.equal(manager.get('doubleClickBehavior'), 'toggle-fit');
   assert.equal(manager.get('backgroundTheme'), 'dark');

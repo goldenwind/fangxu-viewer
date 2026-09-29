@@ -1,5 +1,6 @@
 import './styles.css';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { APP_CONFIG } from './config.js';
 import { UpdateService } from './update/service.js';
 import { UpdateManager } from './update/manager.js';
@@ -13,6 +14,7 @@ import { UIToolbar } from './viewer/ui-toolbar.js';
 import { EmptyState } from './viewer/empty-state.js';
 import { SettingsManager } from './viewer/settings.js';
 import { SettingsModal } from './viewer/settings-modal.js';
+import { ContextMenu } from './viewer/context-menu.js';
 
 // DOM elements
 const topbarContainer = document.querySelector('#topbar-container');
@@ -101,6 +103,7 @@ const canvasView = new CanvasView({
 // 2. Initialize Filmstrip
 const filmstrip = new Filmstrip({
   container: filmstripContainer,
+  settingsManager,
   onSelectImage: (index) => {
     if (controller) controller.jumpToIndex(index);
   },
@@ -169,6 +172,11 @@ settingsModal = new SettingsModal({
   onApplySettings: (allSettings) => {
     canvasView.setTheme(allSettings.backgroundTheme);
     slideshow.setIntervalDuration(allSettings.slideshowInterval);
+    if (allSettings.filmstripMode === 'always') {
+      filmstrip.show();
+    } else if (allSettings.filmstripMode === 'manual') {
+      filmstrip.hide();
+    }
   },
 });
 
@@ -184,11 +192,26 @@ uiToolbar = new UIToolbar({
   },
 });
 
+// 9. Initialize 2345 Right-Click Context Menu
+const contextMenu = new ContextMenu({
+  controller,
+  onOpenSettings: () => {
+    if (settingsModal) settingsModal.open();
+  },
+});
+
+// Listen to native macOS menu actions
+listen('menu-action', (event) => {
+  const action = event.payload;
+  contextMenu.handleAction(action);
+});
+
 // Apply initial user preferences
 canvasView.setTheme(settingsManager.get('backgroundTheme'));
 slideshow.setIntervalDuration(settingsManager.get('slideshowInterval'));
-if (settingsManager.get('showFilmstripByDefault')) {
-  filmstrip.toggle(true);
+const initialFilmstripMode = settingsManager.get('filmstripMode') || (settingsManager.get('showFilmstripByDefault') ? 'always' : 'hover');
+if (initialFilmstripMode === 'always') {
+  filmstrip.show();
 }
 
 // 9. Update Manager
