@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 /**
  * UIToolbar: Manages 2345-style Topbar, Floating Bottom Toolbar, and Side Navigation Arrows
  */
@@ -36,8 +38,20 @@ export class UIToolbar {
     this.topbarContainer.setAttribute('data-tauri-drag-region', 'true');
     this.topbarContainer.innerHTML = `
       <div class="topbar-left" data-tauri-drag-region="true">
+        <div class="custom-window-controls" data-tauri-drag-region="false">
+          <button class="win-btn win-close" id="btn-win-close" title="关闭窗口 (⌘W)">
+            <svg class="win-btn-icon" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+          <button class="win-btn win-min" id="btn-win-min" title="最小化 (⌘M)">
+            <svg class="win-btn-icon" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/></svg>
+          </button>
+          <button class="win-btn win-max" id="btn-win-max" title="最大化 / 还原">
+            <svg class="win-btn-icon" width="7" height="7" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,3 21,3 21,21 3,21"/></svg>
+          </button>
+        </div>
+
         <div class="app-brand" data-tauri-drag-region="true">
-          <svg class="app-logo" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="app-logo" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect width="18" height="18" x="3" y="3" rx="2" ry="2"/>
             <circle cx="9" cy="9" r="2"/>
             <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
@@ -191,6 +205,36 @@ export class UIToolbar {
   }
 
   bindEvents() {
+    // Custom Window Control Buttons
+    const btnWinClose = this.topbarContainer.querySelector('#btn-win-close');
+    const btnWinMin = this.topbarContainer.querySelector('#btn-win-min');
+    const btnWinMax = this.topbarContainer.querySelector('#btn-win-max');
+
+    if (btnWinClose) {
+      btnWinClose.addEventListener('click', (e) => {
+        e.stopPropagation();
+        invoke('close_window').catch(() => window.close());
+      });
+    }
+    if (btnWinMin) {
+      btnWinMin.addEventListener('click', (e) => {
+        e.stopPropagation();
+        invoke('minimize_window').catch(() => {});
+      });
+    }
+    if (btnWinMax) {
+      btnWinMax.addEventListener('click', (e) => {
+        e.stopPropagation();
+        invoke('toggle_maximize_window').catch(() => {});
+      });
+    }
+
+    // Double click topbar drag region to maximize/restore
+    this.topbarContainer.addEventListener('dblclick', (e) => {
+      if (e.target.closest('button, .file-name-badge, .meta-tag, .viewer-help-card')) return;
+      invoke('toggle_maximize_window').catch(() => {});
+    });
+
     // Topbar buttons
     this.btnTopOpen.addEventListener('click', () => this.controller.openFileDialog());
     this.btnTopReveal.addEventListener('click', () => this.controller.revealInFileManager());
