@@ -8,6 +8,7 @@
     "build": "vite build",
     "test": "node --test",
     "check": "npm run test && npm run build && cargo test --manifest-path src-tauri/Cargo.toml",
+    "package:macos-dmg": "sh scripts/package-macos-dmg.sh",
     "tauri": "tauri"
   },
   "dependencies": {
