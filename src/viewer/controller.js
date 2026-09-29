@@ -6,17 +6,21 @@ export class ViewerController {
     filmstrip,
     exifDrawer,
     slideshow,
+    settingsManager,
     onStateChange,
     showToast,
     confirmDialog,
+    onOpenSettings,
   }) {
     this.canvasView = canvasView;
     this.filmstrip = filmstrip;
     this.exifDrawer = exifDrawer;
     this.slideshow = slideshow;
+    this.settingsManager = settingsManager;
     this.onStateChange = onStateChange;
     this.showToast = showToast || console.log;
     this.confirmDialog = confirmDialog;
+    this.onOpenSettings = onOpenSettings;
 
     this.images = [];
     this.currentIndex = -1;
@@ -109,12 +113,26 @@ export class ViewerController {
 
   prevImage() {
     if (this.images.length <= 1) return;
+    const isLoop = this.settingsManager ? this.settingsManager.get('loopNavigation') : true;
+
+    if (!isLoop && this.currentIndex <= 0) {
+      this.showToast('已是第一张图片');
+      return;
+    }
+
     const nextIdx = (this.currentIndex - 1 + this.images.length) % this.images.length;
     this.jumpToIndex(nextIdx);
   }
 
   nextImage() {
     if (this.images.length <= 1) return;
+    const isLoop = this.settingsManager ? this.settingsManager.get('loopNavigation') : true;
+
+    if (!isLoop && this.currentIndex >= this.images.length - 1) {
+      this.showToast('已是最后一张图片');
+      return;
+    }
+
     const nextIdx = (this.currentIndex + 1) % this.images.length;
     this.jumpToIndex(nextIdx);
   }
@@ -300,6 +318,13 @@ export class ViewerController {
         if (!this.canvasView.isFitMode) {
           this.canvasView.fitToWindow(true);
         }
+        return;
+      }
+
+      // Open settings: Ctrl+, / Cmd+,
+      if (ctrlOrCmd && (e.key === ',' || e.key === '，')) {
+        e.preventDefault();
+        if (this.onOpenSettings) this.onOpenSettings();
         return;
       }
 

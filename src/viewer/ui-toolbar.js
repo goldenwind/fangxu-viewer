@@ -17,14 +17,14 @@ export class UIToolbar {
     sideArrowsContainer,
     controller,
     canvasView,
-    onOpenAbout,
+    onOpenSettings,
   }) {
     this.topbarContainer = topbarContainer;
     this.bottomToolbarContainer = bottomToolbarContainer;
     this.sideArrowsContainer = sideArrowsContainer;
     this.controller = controller;
     this.canvasView = canvasView;
-    this.onOpenAbout = onOpenAbout;
+    this.onOpenSettings = onOpenSettings;
 
     this.setupDOM();
     this.bindEvents();
@@ -75,8 +75,12 @@ export class UIToolbar {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
           <span>帮助</span>
         </button>
-        <button class="top-icon-btn" id="btn-top-about" title="关于 / 升级 / 会员">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+        <button class="top-icon-btn" id="btn-top-settings" title="偏好设置 (Ctrl/Cmd + ,)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span>设置</span>
         </button>
       </div>
     `;
@@ -177,7 +181,7 @@ export class UIToolbar {
     this.btnTopCopy = this.topbarContainer.querySelector('#btn-top-copy');
     this.btnTopSaveas = this.topbarContainer.querySelector('#btn-top-saveas');
     this.btnTopHelp = this.topbarContainer.querySelector('#btn-top-help');
-    this.btnTopAbout = this.topbarContainer.querySelector('#btn-top-about');
+    this.btnTopSettings = this.topbarContainer.querySelector('#btn-top-settings');
 
     this.barZoomLabel = this.bottomToolbarContainer.querySelector('#bar-zoom-label');
     this.barFitWindow = this.bottomToolbarContainer.querySelector('#bar-fit-window');
@@ -192,8 +196,8 @@ export class UIToolbar {
     this.btnTopReveal.addEventListener('click', () => this.controller.revealInFileManager());
     this.btnTopCopy.addEventListener('click', () => this.controller.copyToClipboard());
     this.btnTopSaveas.addEventListener('click', () => this.controller.saveAs());
-    this.btnTopAbout.addEventListener('click', () => {
-      if (this.onOpenAbout) this.onOpenAbout();
+    this.btnTopSettings.addEventListener('click', () => {
+      if (this.onOpenSettings) this.onOpenSettings();
     });
 
     // Help modal trigger
@@ -342,7 +346,7 @@ export class UIToolbar {
               <div class="shortcut-row"><kbd>I</kbd><span>查看图片详细属性与 EXIF 参数</span></div>
               <div class="shortcut-row"><kbd>Delete</kbd><span>将当前图片移入系统回收站</span></div>
               <div class="shortcut-row"><kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>C</kbd><span>复制图片至剪贴板</span></div>
-              <div class="shortcut-row"><kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>S</kbd><span>另存为...</span></div>
+              <div class="shortcut-row"><kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>,</kbd><span>打开偏好设置</span></div>
               <div class="shortcut-row"><kbd>Esc</kbd><span>退出全屏 / 关闭弹窗</span></div>
             </div>
           </div>

@@ -1,9 +1,6 @@
 import './styles.css';
 import { invoke } from '@tauri-apps/api/core';
 import { APP_CONFIG } from './config.js';
-import { UsageTracker } from './core/usage-tracker.js';
-import { MembershipService } from './membership/service.js';
-import { MembershipCenter } from './membership/center.js';
 import { UpdateService } from './update/service.js';
 import { UpdateManager } from './update/manager.js';
 
@@ -14,6 +11,8 @@ import { Slideshow } from './viewer/slideshow.js';
 import { ViewerController } from './viewer/controller.js';
 import { UIToolbar } from './viewer/ui-toolbar.js';
 import { EmptyState } from './viewer/empty-state.js';
+import { SettingsManager } from './viewer/settings.js';
+import { SettingsModal } from './viewer/settings-modal.js';
 
 // DOM elements
 const topbarContainer = document.querySelector('#topbar-container');
@@ -25,7 +24,7 @@ const exifDrawerContainer = document.querySelector('#exif-drawer-container');
 const slideshowContainer = document.querySelector('#slideshow-container');
 const emptyContainer = document.querySelector('#empty-container');
 const toastContainer = document.querySelector('#toast-container');
-const membershipModalContainer = document.querySelector('#membership-modal-container');
+const settingsModalContainer = document.querySelector('#settings-modal-container');
 
 // Toast notification helper
 function showToast(message, duration = 2200) {
@@ -73,17 +72,33 @@ function confirmDialog(message) {
   });
 }
 
-// 1. Initialize Canvas View
+// 0. Initialize Settings Manager
+const settingsManager = new SettingsManager();
+
+// Forward declarations for cross-referencing
 let uiToolbar = null;
+let controller = null;
+let settingsModal = null;
+
+// 1. Initialize Canvas View
 const canvasView = new CanvasView({
   container: canvasContainer,
+  settingsManager,
   onTransformChange: (info) => {
     if (uiToolbar) uiToolbar.updateTransform(info);
+  },
+  onWheelPage: (dir) => {
+    if (controller) {
+      if (dir > 0) controller.nextImage();
+      else controller.prevImage();
+    }
+  },
+  onToggleFullscreen: () => {
+    if (controller) controller.toggleFullscreen();
   },
 });
 
 // 2. Initialize Filmstrip
-let controller = null;
 const filmstrip = new Filmstrip({
   container: filmstripContainer,
   onSelectImage: (index) => {
@@ -131,8 +146,12 @@ controller = new ViewerController({
   filmstrip,
   exifDrawer,
   slideshow,
+  settingsManager,
   showToast,
   confirmDialog,
+  onOpenSettings: () => {
+    if (settingsModal) settingsModal.open();
+  },
   onStateChange: (state) => {
     if (uiToolbar) uiToolbar.updateState(state);
     if (!state.hasImage) {
@@ -143,38 +162,15 @@ controller = new ViewerController({
   },
 });
 
-// 7. Starter Foundation (Membership, Updates)
-const usage = new UsageTracker({ limit: APP_CONFIG.membership.freeUsesPerMonth });
-const service = new MembershipService(APP_CONFIG.membership);
-
-membershipModalContainer.innerHTML = `
-  <div class="membership-dialog">
-    <div data-membership-root></div>
-  </div>
-`;
-
-const membershipCenter = new MembershipCenter({
-  root: membershipModalContainer.querySelector('[data-membership-root]'),
-  service,
-  usage,
-  config: { ...APP_CONFIG.membership, brandName: APP_CONFIG.brand.name },
+// 7. Initialize Settings Modal
+settingsModal = new SettingsModal({
+  container: settingsModalContainer,
+  settingsManager,
+  onApplySettings: (allSettings) => {
+    canvasView.setTheme(allSettings.backgroundTheme);
+    slideshow.setIntervalDuration(allSettings.slideshowInterval);
+  },
 });
-
-// Let closing membership modal hide the overlay
-membershipModalContainer.addEventListener('click', (e) => {
-  if (e.target === membershipModalContainer) {
-    membershipModalContainer.style.display = 'none';
-  }
-});
-
-const updateManager = new UpdateManager({
-  root: document.body,
-  service: new UpdateService(APP_CONFIG.updates),
-  config: APP_CONFIG.updates,
-});
-
-membershipCenter.initialize();
-updateManager.initialize();
 
 // 8. Initialize UI Toolbar
 uiToolbar = new UIToolbar({
@@ -183,11 +179,25 @@ uiToolbar = new UIToolbar({
   sideArrowsContainer,
   controller,
   canvasView,
-  onOpenAbout: () => {
-    membershipModalContainer.style.display = 'grid';
-    membershipCenter.open();
+  onOpenSettings: () => {
+    if (settingsModal) settingsModal.open();
   },
 });
+
+// Apply initial user preferences
+canvasView.setTheme(settingsManager.get('backgroundTheme'));
+slideshow.setIntervalDuration(settingsManager.get('slideshowInterval'));
+if (settingsManager.get('showFilmstripByDefault')) {
+  filmstrip.toggle(true);
+}
+
+// 9. Update Manager
+const updateManager = new UpdateManager({
+  root: document.body,
+  service: new UpdateService(APP_CONFIG.updates),
+  config: APP_CONFIG.updates,
+});
+updateManager.initialize();
 
 // 9. Drag & drop support
 window.addEventListener('dragover', (e) => {

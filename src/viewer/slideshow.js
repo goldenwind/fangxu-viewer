@@ -82,6 +82,18 @@ export class Slideshow {
     });
   }
 
+  setIntervalDuration(ms) {
+    if (ms) {
+      this.intervalMs = ms;
+      if (this.speedSelect) {
+        this.speedSelect.value = String(ms);
+      }
+      if (this.isPlaying) {
+        this.resetTimer();
+      }
+    }
+  }
+
   start() {
     this.isPlaying = true;
     this.container.classList.add('is-active');

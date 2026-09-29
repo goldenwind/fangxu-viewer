@@ -76,3 +76,40 @@ test('rotation cycles through 0, 90, 180, 270', () => {
   rotateLeft();
   assert.equal(rotation, 270);
 });
+
+test('image index navigation respects loopNavigation=false without wrapping', () => {
+  const images = [
+    { name: '1.jpg', path: '/path/1.jpg' },
+    { name: '2.jpg', path: '/path/2.jpg' },
+  ];
+
+  let currentIndex = 0;
+  const loop = false;
+
+  const next = () => {
+    if (currentIndex >= images.length - 1) {
+      if (!loop) return false;
+      currentIndex = 0;
+    } else {
+      currentIndex += 1;
+    }
+    return true;
+  };
+
+  const prev = () => {
+    if (currentIndex <= 0) {
+      if (!loop) return false;
+      currentIndex = images.length - 1;
+    } else {
+      currentIndex -= 1;
+    }
+    return true;
+  };
+
+  assert.equal(prev(), false);
+  assert.equal(currentIndex, 0); // stays at 0
+  assert.equal(next(), true);
+  assert.equal(currentIndex, 1);
+  assert.equal(next(), false);
+  assert.equal(currentIndex, 1); // stays at 1
+});

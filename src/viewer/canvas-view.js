@@ -2,10 +2,12 @@
  * CanvasView: High-performance pan & zoom image viewport with 2345-style interaction
  */
 export class CanvasView {
-  constructor({ container, onTransformChange, onDoubleClick }) {
+  constructor({ container, settingsManager, onTransformChange, onWheelPage, onToggleFullscreen }) {
     this.container = container;
+    this.settingsManager = settingsManager;
     this.onTransformChange = onTransformChange;
-    this.onDoubleClick = onDoubleClick;
+    this.onWheelPage = onWheelPage;
+    this.onToggleFullscreen = onToggleFullscreen;
 
     this.scale = 1.0;
     this.fitScale = 1.0;
@@ -15,6 +17,8 @@ export class CanvasView {
     this.flipH = false;
     this.flipV = false;
     this.isFitMode = true;
+
+    this.lastWheelPageTime = 0;
 
     this.naturalWidth = 0;
     this.naturalHeight = 0;
@@ -210,7 +214,22 @@ export class CanvasView {
     if (!this.hasImage) return;
     e.preventDefault();
 
-    // Standard 2345 mouse wheel: zoom centered on cursor
+    const behavior = this.settingsManager ? this.settingsManager.get('wheelBehavior') : 'zoom';
+
+    if (behavior === 'page') {
+      const now = Date.now();
+      // Throttle wheel page turns to avoid skipping multiple images on trackpad/momentum wheel
+      if (now - this.lastWheelPageTime > 180) {
+        this.lastWheelPageTime = now;
+        if (this.onWheelPage) {
+          const direction = e.deltaY > 0 ? 1 : -1;
+          this.onWheelPage(direction);
+        }
+      }
+      return;
+    }
+
+    // Default: zoom centered on cursor
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.869;
     this.zoomBy(zoomFactor, { x: e.clientX, y: e.clientY });
   }
@@ -244,8 +263,12 @@ export class CanvasView {
   handleDblClick(e) {
     if (!this.hasImage) return;
     e.preventDefault();
-    if (this.onDoubleClick) {
-      this.onDoubleClick();
+
+    const dblBehavior = this.settingsManager ? this.settingsManager.get('doubleClickBehavior') : 'toggle-fit';
+    if (dblBehavior === 'toggle-fullscreen') {
+      if (this.onToggleFullscreen) {
+        this.onToggleFullscreen();
+      }
       return;
     }
 
@@ -269,6 +292,15 @@ export class CanvasView {
     } else {
       this.fitToWindow(true);
     }
+  }
+
+  setTheme(themeName) {
+    const validThemes = ['dark', 'checkerboard', 'black', 'light'];
+    validThemes.forEach((t) => {
+      this.container.classList.remove(`theme-${t}`);
+    });
+    const selected = validThemes.includes(themeName) ? themeName : 'dark';
+    this.container.classList.add(`theme-${selected}`);
   }
 
   applyTransform(smooth = false) {
