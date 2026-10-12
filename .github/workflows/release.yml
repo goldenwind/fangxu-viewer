@@ -84,12 +84,10 @@ jobs:
           New-Item -ItemType Directory -Force $outDir | Out-Null
 
           if (Test-Path $sourceExe) {
-            Copy-Item $sourceExe "$outDir/方序看图_${version}_windows_x64.exe" -Force
             Copy-Item $sourceExe "$outDir/fangxu-viewer_${version}_windows_x64.exe" -Force
           }
 
           Get-ChildItem -Path "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | ForEach-Object {
-            Copy-Item $_.FullName "$outDir/方序看图_${version}_x64-setup.exe" -Force
             Copy-Item $_.FullName "$outDir/fangxu-viewer_${version}_x64-setup.exe" -Force
           }
 
@@ -111,13 +109,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            arch: aarch64
+          - arch: aarch64
             target: aarch64-apple-darwin
-          - os: macos-13
-            arch: x64
+          - arch: x64
             target: x86_64-apple-darwin
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -143,11 +139,17 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           mkdir -p release_macos
-          find src-tauri/target -name "*.dmg" | while read -r dmg; do
+          find src-tauri/target/${{ matrix.target }} -name "*.dmg" | while read -r dmg; do
             echo "Found DMG: $dmg"
-            cp "$dmg" "release_macos/方序看图_${VERSION}_${{ matrix.arch }}.dmg"
             cp "$dmg" "release_macos/fangxu-viewer_${VERSION}_${{ matrix.arch }}.dmg"
           done
+          # Fallback if target directory structure differs
+          if [ ! -f "release_macos/fangxu-viewer_${VERSION}_${{ matrix.arch }}.dmg" ]; then
+            find src-tauri/target -name "*.dmg" | while read -r dmg; do
+              echo "Fallback DMG: $dmg"
+              cp "$dmg" "release_macos/fangxu-viewer_${VERSION}_${{ matrix.arch }}.dmg"
+            done
+          fi
 
       - name: Upload to GitHub Release
         env:
@@ -191,10 +193,15 @@ jobs:
 
       - name: Prepare Linux packages
         run: |
+          VERSION=$(node -p "require('./package.json').version")
           mkdir -p release_linux
-          find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" \) | while read -r pkg; do
-            echo "Found package: $pkg"
-            cp "$pkg" "release_linux/"
+          find src-tauri/target/release/bundle -type f -name "*.deb" | while read -r pkg; do
+            echo "Found deb package: $pkg"
+            cp "$pkg" "release_linux/fangxu-viewer_${VERSION}_amd64.deb"
+          done
+          find src-tauri/target/release/bundle -type f -name "*.AppImage" | while read -r pkg; do
+            echo "Found AppImage package: $pkg"
+            cp "$pkg" "release_linux/fangxu-viewer_${VERSION}_amd64.AppImage"
           done
 
       - name: Upload to GitHub Release
