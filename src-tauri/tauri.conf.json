@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "方序看图",
-  "version": "0.1.1",
+  "mainBinaryName": "fangxu-viewer",
+  "version": "0.1.2",
   "identifier": "com.fangxu.viewer",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -145,6 +146,13 @@
         "mimeType": "image/x-farbfeld"
       }
     ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "template": "nsis/installer.nsi",
+        "languages": ["SimpChinese", "English"]
+      }
+    },
     "macOS": {
       "dmg": {
         "windowSize": {

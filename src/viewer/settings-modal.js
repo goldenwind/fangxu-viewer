@@ -6,7 +6,7 @@ import { SUPPORTED_FORMATS_METADATA, ALL_SUPPORTED_EXTENSIONS } from './settings
  * SettingsModal: Horizontal preferences dialog with left category tabs
  */
 export class SettingsModal {
-  constructor({ container, settingsManager, onApplySettings, onCheckUpdate, currentVersion = '0.1.1', showToast }) {
+  constructor({ container, settingsManager, onApplySettings, onCheckUpdate, currentVersion = '0.1.2', showToast }) {
     this.container = container;
     this.settingsManager = settingsManager;
     this.onApplySettings = onApplySettings;

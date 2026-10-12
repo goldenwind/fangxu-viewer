@@ -1,6 +1,6 @@
 [package]
 name = "fangxu-viewer"
-version = "0.1.1"
+version = "0.1.2"
 description = "Cross-platform minimalist image viewer by Fangxu"
 authors = ["fangxu"]
 edition = "2021"

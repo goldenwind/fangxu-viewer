@@ -194,7 +194,7 @@ controller = new ViewerController({
 settingsModal = new SettingsModal({
   container: settingsModalContainer,
   settingsManager,
-  currentVersion: '0.1.1',
+  currentVersion: '0.1.2',
   showToast,
   onApplySettings: (allSettings) => {
     canvasView.setTheme(allSettings.backgroundTheme);
