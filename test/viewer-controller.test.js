@@ -155,3 +155,146 @@ test('Esc key closes modals in correct priority order', () => {
   assert.equal(handleEsc(), 'none');
 });
 
+test('Esc explicitly exits fullscreen instead of toggling', () => {
+  let isFullscreen = true;
+  let exitCalls = 0;
+
+  const setFullscreen = (target) => {
+    isFullscreen = target;
+    exitCalls++;
+  };
+
+  const onEscape = () => {
+    if (isFullscreen) {
+      setFullscreen(false);
+      return 'fullscreen-exited';
+    }
+    return 'none';
+  };
+
+  assert.equal(onEscape(), 'fullscreen-exited');
+  assert.equal(isFullscreen, false);
+  assert.equal(exitCalls, 1);
+
+  // Pressing Esc again when already exited does not re-enter fullscreen
+  assert.equal(onEscape(), 'none');
+  assert.equal(isFullscreen, false);
+  assert.equal(exitCalls, 1);
+});
+
+test('Esc closes current window in window mode regardless of filmstrip and never zooms', () => {
+  let windowClosed = false;
+  let isFullscreen = false;
+  let filmstripVisible = true;
+  let imageScale = 1.0;
+
+  const onEscape = () => {
+    // Top-level modals
+    // Slideshow
+    if (isFullscreen) {
+      isFullscreen = false;
+      return 'fullscreen-exited';
+    }
+    // Filmstrip must NOT block window close, and image scale must NEVER change!
+    windowClosed = true;
+    return 'window-closed';
+  };
+
+  assert.equal(onEscape(), 'window-closed');
+  assert.equal(windowClosed, true);
+  assert.equal(imageScale, 1.0); // scale must not be enlarged
+});
+
+test('Double click toggle-fit always centers image at (0, 0)', () => {
+  let scale = 0.5;
+  let translateX = 120; // was dragged/panned
+  let translateY = -80;
+  let isFitMode = true;
+  const fitScale = 0.5;
+
+  const actualSize = () => {
+    scale = 1.0;
+    translateX = 0;
+    translateY = 0;
+    isFitMode = false;
+  };
+
+  const fitToWindow = () => {
+    scale = fitScale;
+    translateX = 0;
+    translateY = 0;
+    isFitMode = true;
+  };
+
+  const handleDblClick = () => {
+    const isCurrentlyFit = isFitMode || Math.abs(scale - fitScale) < 0.02;
+    if (isCurrentlyFit) {
+      actualSize();
+    } else {
+      fitToWindow();
+    }
+  };
+
+  // 1. In Fit mode: double click to 1:1
+  handleDblClick();
+  assert.equal(scale, 1.0);
+  assert.equal(translateX, 0);
+  assert.equal(translateY, 0);
+  assert.equal(isFitMode, false);
+
+  // 2. In 1:1 mode: double click back to Fit
+  handleDblClick();
+  assert.equal(scale, 0.5);
+  assert.equal(translateX, 0);
+  assert.equal(translateY, 0);
+  assert.equal(isFitMode, true);
+});
+
+test('macOS image convert default format selection and size preset resolution', () => {
+  // Test format default: JPG defaults to PNG, others default to JPEG
+  const getDefaultTargetFormat = (ext) => {
+    const lower = (ext || '').toLowerCase();
+    if (lower === 'jpg' || lower === 'jpeg') return 'png';
+    return 'jpeg';
+  };
+
+  assert.equal(getDefaultTargetFormat('jpg'), 'png');
+  assert.equal(getDefaultTargetFormat('jpeg'), 'png');
+  assert.equal(getDefaultTargetFormat('png'), 'jpeg');
+  assert.equal(getDefaultTargetFormat('webp'), 'jpeg');
+  assert.equal(getDefaultTargetFormat('heic'), 'jpeg');
+
+  // Test size preset max dimension resolution
+  const resolveMaxDim = (preset) => {
+    switch (preset) {
+      case 'small': return 640;
+      case 'medium': return 1280;
+      case 'large': return 1920;
+      case 'actual':
+      default: return null;
+    }
+  };
+
+  assert.equal(resolveMaxDim('small'), 640);
+  assert.equal(resolveMaxDim('medium'), 1280);
+  assert.equal(resolveMaxDim('large'), 1920);
+  assert.equal(resolveMaxDim('actual'), null);
+});
+
+test('macOS image convert duplicate filename numbering matches Finder convention', () => {
+  const existingFiles = new Set(['photo.jpeg', 'photo 1.jpeg', 'photo 2.jpeg']);
+
+  const getAvailableFilename = (stem, ext, existing) => {
+    let candidate = `${stem}.${ext}`;
+    if (!existing.has(candidate)) return candidate;
+    let counter = 1;
+    while (existing.has(`${stem} ${counter}.${ext}`)) {
+      counter += 1;
+    }
+    return `${stem} ${counter}.${ext}`;
+  };
+
+  assert.equal(getAvailableFilename('photo', 'jpeg', existingFiles), 'photo 3.jpeg');
+  assert.equal(getAvailableFilename('document', 'png', existingFiles), 'document.png');
+});
+

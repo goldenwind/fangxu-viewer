@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
+use tauri::Emitter;
 #[cfg(not(target_os = "macos"))]
 use tauri::{PhysicalPosition, PhysicalSize};
 
@@ -462,11 +463,124 @@ pub fn reveal_in_file_manager(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvertImageResult {
+    pub output_path: String,
+    pub output_name: String,
+    pub dest_path: String,
+    pub dest_name: String,
+}
+
+#[tauri::command]
+pub async fn convert_image_with_system(
+    source_path: String,
+    target_format: String,
+    size_preset: String,
+    preserve_metadata: bool,
+) -> Result<ConvertImageResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = PathBuf::from(&source_path);
+        if !source.exists() {
+            return Err("源图片不存在".to_string());
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let parent = source.parent().ok_or_else(|| "无法获取上级目录".to_string())?;
+            let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
+
+            let ext = match target_format.to_ascii_lowercase().as_str() {
+                "png" => "png",
+                "heif" | "heic" => "heic",
+                _ => "jpeg",
+            };
+
+            let mut dest = parent.join(format!("{}.{}", stem, ext));
+            if dest.exists() {
+                let mut counter = 1;
+                loop {
+                    let candidate = parent.join(format!("{} {}.{}", stem, counter, ext));
+                    if !candidate.exists() {
+                        dest = candidate;
+                        break;
+                    }
+                    counter += 1;
+                }
+            }
+
+            let mut cmd = Command::new("/usr/bin/sips");
+            let sips_format = match ext {
+                "png" => "png",
+                "heic" => "heic",
+                _ => "jpeg",
+            };
+            cmd.arg("-s").arg("format").arg(sips_format);
+            cmd.arg("-s").arg("formatOptions").arg("best");
+
+            match size_preset.to_ascii_lowercase().as_str() {
+                "small" | "小" => {
+                    cmd.arg("-Z").arg("640");
+                }
+                "medium" | "中" => {
+                    cmd.arg("-Z").arg("1280");
+                }
+                "large" | "大" => {
+                    cmd.arg("-Z").arg("1920");
+                }
+                _ => {}
+            }
+
+            if !preserve_metadata {
+                cmd.arg("--deleteColorManagementProperties");
+            }
+
+            cmd.arg(&source).arg("--out").arg(&dest);
+
+            let output = cmd.output().map_err(|e| format!("执行系统转换命令失败: {e}"))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("系统图像转换失败: {stderr}"));
+            }
+
+            let output_name = dest.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+            let output_path = dest.to_string_lossy().to_string();
+
+            Ok(ConvertImageResult {
+                dest_path: output_path.clone(),
+                dest_name: output_name.clone(),
+                output_path,
+                output_name,
+            })
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (target_format, size_preset, preserve_metadata);
+            Err("系统转换图像功能仅支持 macOS 平台".to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("异步执行任务失败: {e}"))?
+}
+
+#[tauri::command]
+pub fn set_fullscreen_state(window: tauri::Window, fullscreen: bool) -> Result<bool, String> {
+    window.set_fullscreen(fullscreen).map_err(|e| e.to_string())?;
+    Ok(fullscreen)
+}
+
+#[tauri::command]
+pub fn is_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    window.is_fullscreen().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn toggle_fullscreen(window: tauri::Window) -> Result<bool, String> {
     let is_fullscreen = window.is_fullscreen().map_err(|e| e.to_string())?;
-    window.set_fullscreen(!is_fullscreen).map_err(|e| e.to_string())?;
-    Ok(!is_fullscreen)
+    let target = !is_fullscreen;
+    window.set_fullscreen(target).map_err(|e| e.to_string())?;
+    Ok(target)
 }
 
 #[tauri::command]
@@ -545,12 +659,10 @@ fn toggle_maximize_macos(window: &tauri::Window) -> Result<bool, String> {
 #[tauri::command]
 pub fn toggle_maximize_window(window: tauri::Window) -> Result<bool, String> {
     #[cfg(target_os = "macos")]
-    {
-        return toggle_maximize_macos(&window);
-    }
+    let res = toggle_maximize_macos(&window);
 
     #[cfg(not(target_os = "macos"))]
-    {
+    let res = (|| -> Result<bool, String> {
         let mut bounds_lock = PRE_MAX_BOUNDS.lock().map_err(|e| e.to_string())?;
         if let Some((pos, size)) = bounds_lock.take() {
             let _ = window.unmaximize();
@@ -578,20 +690,206 @@ pub fn toggle_maximize_window(window: tauri::Window) -> Result<bool, String> {
             let _ = window.maximize();
         }
         Ok(true)
+    })();
+
+    if let Ok(is_max) = res {
+        let _ = window.emit("window-maximize-change", is_max);
+    }
+    res
+}
+
+#[tauri::command]
+pub fn maximize_window_initial(window: tauri::Window) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWindow;
+        let ptr = window.ns_window().map_err(|e| e.to_string())? as *mut NSWindow;
+        if !ptr.is_null() {
+            let ns_win = unsafe { &*ptr };
+            if let Some(screen) = ns_win.screen() {
+                let vis_frame = screen.visibleFrame();
+                let mut lock = PRE_MAX_FRAME.lock().map_err(|e| e.to_string())?;
+                if lock.is_none() {
+                    *lock = Some(ns_win.frame());
+                }
+                ns_win.setFrame_display_animate(vis_frame, true, false);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window.maximize();
+    }
+    let _ = window.emit("window-maximize-change", true);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn is_window_maximized(window: tauri::Window) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = &window;
+        let lock = PRE_MAX_FRAME.lock().map_err(|e| e.to_string())?;
+        Ok(lock.is_some())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let is_max = window.is_maximized().unwrap_or(false);
+        let bounds_lock = PRE_MAX_BOUNDS.lock().map_err(|e| e.to_string())?;
+        Ok(is_max || bounds_lock.is_some())
     }
 }
 
 #[tauri::command]
 pub fn close_window(window: tauri::Window) -> Result<(), String> {
-    window.close().map_err(|e| e.to_string())
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWindow;
+        if let Ok(ptr) = window.ns_window() {
+            let ptr = ptr as *mut NSWindow;
+            if !ptr.is_null() {
+                let ns_win = unsafe { &*ptr };
+                ns_win.close();
+                return Ok(());
+            }
+        }
+    }
+    window.destroy().map_err(|e| e.to_string())
+}
+
+static PENDING_TARGET: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn set_pending_target(path: String) {
+    if let Ok(mut lock) = PENDING_TARGET.lock() {
+        *lock = Some(path);
+    }
+}
+
+pub fn get_pending_target() -> Option<String> {
+    if let Ok(mut lock) = PENDING_TARGET.lock() {
+        lock.take()
+    } else {
+        None
+    }
 }
 
 #[tauri::command]
 pub fn get_cli_target() -> Option<String> {
+    // 1. Check if there is a pending target from RunEvent::Opened (macOS file association)
+    if let Some(target) = get_pending_target() {
+        return Some(target);
+    }
+
+    // 2. Check command line arguments (Windows / CLI)
     std::env::args().skip(1).find(|arg| {
         let p = Path::new(arg);
         p.exists() && (p.is_file() || p.is_dir())
     })
+}
+
+#[cfg(target_os = "macos")]
+mod macos_ls {
+    use std::ffi::c_void;
+
+    #[link(name = "CoreServices", kind = "framework")]
+    extern "C" {
+        pub fn LSSetDefaultRoleHandlerForContentType(
+            inContentType: *const c_void,
+            inRole: u32,
+            inHandlerBundleID: *const c_void,
+        ) -> i32;
+
+        pub fn UTTypeCreatePreferredIdentifierForTag(
+            inTagClass: *const c_void,
+            inTag: *const c_void,
+            inConformingToUTI: *const c_void,
+        ) -> *const c_void;
+
+        pub static kUTTagClassFilenameExtension: *const c_void;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        pub fn CFRelease(cf: *const c_void);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_macos_default_handler_for_ext(ext: &str, bundle_id: &str) -> Result<(), String> {
+    use objc2_foundation::NSString;
+    use std::ffi::c_void;
+
+    let ns_ext = NSString::from_str(ext);
+    let ns_bundle = NSString::from_str(bundle_id);
+
+    unsafe {
+        let cf_ext = (&*ns_ext as *const NSString).cast::<c_void>();
+        let cf_bundle = (&*ns_bundle as *const NSString).cast::<c_void>();
+
+        let uti = macos_ls::UTTypeCreatePreferredIdentifierForTag(
+            macos_ls::kUTTagClassFilenameExtension,
+            cf_ext,
+            std::ptr::null(),
+        );
+
+        if !uti.is_null() {
+            let status = macos_ls::LSSetDefaultRoleHandlerForContentType(uti, 0xFFFFFFFF, cf_bundle);
+            macos_ls::CFRelease(uti);
+            if status != 0 {
+                return Err(format!("LSSetDefaultRoleHandlerForContentType failed with code {status}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn apply_file_associations(extensions: Vec<String>) -> Result<usize, String> {
+    let count = extensions.len();
+
+    #[cfg(target_os = "macos")]
+    {
+        // 1. If running as a .app bundle, register with LaunchServices lsregister
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(app_bundle) = exe_path.ancestors().find(|a| a.extension().map_or(false, |e| e == "app")) {
+                let lsregister_bin = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+                if Path::new(lsregister_bin).exists() {
+                    let _ = Command::new(lsregister_bin)
+                        .arg("-f")
+                        .arg(app_bundle)
+                        .output();
+                }
+            }
+        }
+
+        // 2. Set default role handler for each extension
+        for ext in &extensions {
+            let _ = set_macos_default_handler_for_ext(ext, "com.fangxu.viewer");
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(exe_path) = std::env::current_exe() {
+            let exe_str = exe_path.to_string_lossy().to_string();
+            let prog_id = "FangxuViewer.Image";
+
+            // Configure ProgID open command
+            let open_cmd = format!(r#""{}" "%1""#, exe_str);
+            let _ = Command::new("reg")
+                .args(&["add", &format!(r"HKCU\Software\Classes\{}\shell\open\command", prog_id), "/ve", "/d", &open_cmd, "/f"])
+                .output();
+
+            for ext in &extensions {
+                let dot_ext = if ext.starts_with('.') { ext.clone() } else { format!(".{}", ext) };
+                let _ = Command::new("reg")
+                    .args(&["add", &format!(r"HKCU\Software\Classes\{}", dot_ext), "/ve", "/d", prog_id, "/f"])
+                    .output();
+            }
+        }
+    }
+
+    Ok(count)
 }
 
 #[cfg(test)]

@@ -2,8 +2,6 @@ import './styles.css';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { APP_CONFIG } from './config.js';
-import { UpdateService } from './update/service.js';
-import { UpdateManager } from './update/manager.js';
 
 import { CanvasView } from './viewer/canvas-view.js';
 import { Filmstrip } from './viewer/filmstrip.js';
@@ -15,6 +13,7 @@ import { EmptyState } from './viewer/empty-state.js';
 import { SettingsManager } from './viewer/settings.js';
 import { SettingsModal } from './viewer/settings-modal.js';
 import { ContextMenu } from './viewer/context-menu.js';
+import { ConvertModal } from './viewer/convert-modal.js';
 
 // DOM elements
 const topbarContainer = document.querySelector('#topbar-container');
@@ -27,6 +26,7 @@ const slideshowContainer = document.querySelector('#slideshow-container');
 const emptyContainer = document.querySelector('#empty-container');
 const toastContainer = document.querySelector('#toast-container');
 const settingsModalContainer = document.querySelector('#settings-modal-container');
+const convertModalContainer = document.querySelector('#convert-modal-container');
 
 // Toast notification helper
 function showToast(message, duration = 2200) {
@@ -84,6 +84,14 @@ function confirmDialog(message) {
       cleanup();
       resolve(true);
     });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        cleanup();
+        resolve(false);
+      }
+    });
+
+    document.body.appendChild(overlay);
   });
 }
 
@@ -94,6 +102,7 @@ const settingsManager = new SettingsManager();
 let uiToolbar = null;
 let controller = null;
 let settingsModal = null;
+let convertModal = null;
 
 // 1. Initialize Canvas View
 const canvasView = new CanvasView({
@@ -144,7 +153,7 @@ const slideshow = new Slideshow({
     if (controller) controller.prevImage();
   },
   onExit: () => {
-    // Return to normal view
+    if (controller) controller.notifyState();
   },
 });
 
@@ -168,6 +177,9 @@ controller = new ViewerController({
   onOpenSettings: () => {
     if (settingsModal) settingsModal.open();
   },
+  onOpenConvertModal: (img, meta) => {
+    if (convertModal) convertModal.open(img, meta);
+  },
   onStateChange: (state) => {
     if (uiToolbar) uiToolbar.updateState(state);
     if (!state.hasImage) {
@@ -178,20 +190,12 @@ controller = new ViewerController({
   },
 });
 
-// 7. Update Manager
-const updateManager = new UpdateManager({
-  root: document.body,
-  service: new UpdateService(APP_CONFIG.updates),
-  config: APP_CONFIG.updates,
-});
-updateManager.initialize();
-
-// 8. Initialize Settings Modal
+// 7. Initialize Settings Modal
 settingsModal = new SettingsModal({
   container: settingsModalContainer,
   settingsManager,
-  currentVersion: '0.1.0',
-  onCheckUpdate: () => updateManager.checkNow(true),
+  currentVersion: '0.1.1',
+  showToast,
   onApplySettings: (allSettings) => {
     canvasView.setTheme(allSettings.backgroundTheme);
     slideshow.setIntervalDuration(allSettings.slideshowInterval);
@@ -223,10 +227,54 @@ const contextMenu = new ContextMenu({
   },
 });
 
+// 10. Initialize Convert Modal (macOS)
+convertModal = new ConvertModal({
+  container: convertModalContainer,
+  onConvert: (params) => controller.convertImageWithSystem(params),
+  onRevealInFinder: () => controller.revealInFileManager(),
+});
+
 // Listen to native macOS menu actions
 listen('menu-action', (event) => {
   const action = event.payload;
   handleMenuAction(action);
+});
+
+// Listen to native open-target (e.g. macOS double click associated image file)
+listen('open-target', async (event) => {
+  const targetPath = event.payload;
+  if (targetPath && controller) {
+    await controller.openTarget(targetPath);
+  }
+});
+
+// Listen to native window fullscreen changes (Esc, green traffic light, gestures)
+listen('window-fullscreen-change', (event) => {
+  const isFull = !!event.payload;
+  if (controller) {
+    controller.syncFullscreenState(isFull);
+  }
+});
+
+// Listen to native window maximize changes
+listen('window-maximize-change', (event) => {
+  const isMax = !!event.payload;
+  if (uiToolbar) {
+    uiToolbar.setMaximized(isMax);
+  }
+});
+
+window.addEventListener('resize', async () => {
+  try {
+    const isFull = await invoke('is_fullscreen');
+    if (controller) {
+      controller.syncFullscreenState(isFull);
+    }
+    const isMax = await invoke('is_window_maximized');
+    if (uiToolbar) {
+      uiToolbar.setMaximized(isMax);
+    }
+  } catch {}
 });
 
 function handleMenuAction(action) {
@@ -239,6 +287,10 @@ function handleMenuAction(action) {
     case 'save_as':
     case 'save-as':
       controller.saveAs();
+      break;
+    case 'convert_image':
+    case 'convert-image':
+      if (controller) controller.openConvertModal();
       break;
     case 'reveal':
       controller.revealInFileManager();
@@ -303,6 +355,14 @@ function handleMenuAction(action) {
     case 'settings':
       if (settingsModal) settingsModal.open();
       break;
+    case 'feedback':
+      invoke('open_product_feedback', { language: 'zh' }).catch((err) => {
+        showToast(`打开产品反馈失败: ${err}`);
+      });
+      break;
+    case 'check_update':
+      if (settingsModal) settingsModal.open('about');
+      break;
     case 'help':
       if (uiToolbar) uiToolbar.showHelpModal();
       break;
@@ -363,7 +423,20 @@ window.addEventListener('drop', async (e) => {
   }
 })();
 
-// 10. Check startup arguments (Command line or Open With)
+// 10. Maximize window on startup
+(async () => {
+  try {
+    await invoke('maximize_window_initial');
+    if (uiToolbar) uiToolbar.setMaximized(true);
+  } catch (e) {
+    try {
+      const isMax = await invoke('is_window_maximized');
+      if (uiToolbar) uiToolbar.setMaximized(isMax);
+    } catch {}
+  }
+})();
+
+// 11. Check startup arguments (Command line or Open With)
 (async () => {
   try {
     const cliTarget = await invoke('get_cli_target');

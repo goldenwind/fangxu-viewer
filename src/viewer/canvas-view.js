@@ -344,29 +344,14 @@ export class CanvasView {
       return;
     }
 
-    // Toggle between Fit mode and 1:1 Actual Size
+    // Toggle between Fit mode and 1:1 Actual Size, always centered on window
     this.fitScale = this.calculateFitScale();
-    const isCurrently1to1 = Math.abs(this.scale - 1.0) < 0.02;
+    const isCurrentlyFit = this.isFitMode || Math.abs(this.scale - this.fitScale) < 0.02;
 
-    if (isCurrently1to1) {
-      this.fitToWindow(true);
+    if (isCurrentlyFit) {
+      this.actualSize(true);
     } else {
-      // Zoom to 1:1 focused on cursor
-      const focalPoint = { x: e.clientX, y: e.clientY };
-      const oldScale = this.scale;
-      this.scale = 1.0;
-      this.isFitMode = false;
-      this.isAutoFit = false;
-
-      const rect = this.viewport.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const mouseRelCenterX = focalPoint.x - centerX;
-      const mouseRelCenterY = focalPoint.y - centerY;
-
-      this.translateX = mouseRelCenterX - (mouseRelCenterX - this.translateX) * (1.0 / oldScale);
-      this.translateY = mouseRelCenterY - (mouseRelCenterY - this.translateY) * (1.0 / oldScale);
-      this.applyTransform(true);
+      this.fitToWindow(true);
     }
   }
 

@@ -1,0 +1,211 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release Tag (e.g. v0.1.1, defaults to package.json version)'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get_tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        id: get_tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          elif [ -n "${{ github.event.release.tag_name }}" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v$(node -p "require('./package.json').version")"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: $TAG"
+
+      - name: Ensure GitHub Release Exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG does not exist. Creating..."
+            gh release create "$TAG" --title "方序看图 $TAG" --target "${{ github.sha }}" --generate-notes
+          else
+            echo "Release $TAG already exists."
+          fi
+
+  build-windows:
+    needs: prepare-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - run: npm ci
+
+      - name: Build Windows installer with MSVC
+        run: npm run tauri build -- --bundles nsis --target x86_64-pc-windows-msvc
+
+      - name: Prepare Windows executables and installers
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $sourceExe = "src-tauri/target/x86_64-pc-windows-msvc/release/fangxu-viewer.exe"
+          $outDir = "release_windows"
+          New-Item -ItemType Directory -Force $outDir | Out-Null
+
+          if (Test-Path $sourceExe) {
+            Copy-Item $sourceExe "$outDir/方序看图_${version}_windows_x64.exe" -Force
+            Copy-Item $sourceExe "$outDir/fangxu-viewer_${version}_windows_x64.exe" -Force
+          }
+
+          Get-ChildItem -Path "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | ForEach-Object {
+            Copy-Item $_.FullName "$outDir/方序看图_${version}_x64-setup.exe" -Force
+            Copy-Item $_.FullName "$outDir/fangxu-viewer_${version}_x64-setup.exe" -Force
+          }
+
+      - name: Upload to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = "${{ needs.prepare-release.outputs.tag }}"
+          Write-Host "Uploading Windows release assets to tag: $tag"
+          Get-ChildItem release_windows/*.* | ForEach-Object {
+            Write-Host "Uploading $($_.FullName)"
+            gh release upload $tag $_.FullName --clobber
+          }
+
+  build-macos:
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch: aarch64
+            target: aarch64-apple-darwin
+          - os: macos-13
+            arch: x64
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - run: npm ci
+
+      - name: Build macOS DMG
+        run: npm run tauri build -- --bundles dmg --target ${{ matrix.target }}
+
+      - name: Prepare macOS DMG
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p release_macos
+          find src-tauri/target -name "*.dmg" | while read -r dmg; do
+            echo "Found DMG: $dmg"
+            cp "$dmg" "release_macos/方序看图_${VERSION}_${{ matrix.arch }}.dmg"
+            cp "$dmg" "release_macos/fangxu-viewer_${VERSION}_${{ matrix.arch }}.dmg"
+          done
+
+      - name: Upload to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          echo "Uploading macOS release assets to tag: $TAG"
+          for f in release_macos/*; do
+            if [ -f "$f" ]; then
+              echo "Uploading $f"
+              gh release upload "$TAG" "$f" --clobber
+            fi
+          done
+
+  build-linux:
+    needs: prepare-release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsecret-1-dev libfuse2
+
+      - run: npm ci
+
+      - name: Build Linux packages
+        run: npm run tauri build -- --bundles deb,appimage
+
+      - name: Prepare Linux packages
+        run: |
+          mkdir -p release_linux
+          find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" \) | while read -r pkg; do
+            echo "Found package: $pkg"
+            cp "$pkg" "release_linux/"
+          done
+
+      - name: Upload to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.prepare-release.outputs.tag }}"
+          echo "Uploading Linux release assets to tag: $TAG"
+          for f in release_linux/*; do
+            if [ -f "$f" ]; then
+              echo "Uploading $f"
+              gh release upload "$TAG" "$f" --clobber
+            fi
+          done

@@ -55,6 +55,9 @@ export class Slideshow {
     this.nextBtn = this.container.querySelector('#slideshow-next');
     this.speedSelect = this.container.querySelector('#slideshow-speed');
     this.exitBtn = this.container.querySelector('#slideshow-exit');
+    this.controllerElem = this.container.querySelector('.slideshow-controller');
+    this.isHoveringController = false;
+    this.controllerIdleTimer = null;
   }
 
   bindEvents() {
@@ -80,6 +83,37 @@ export class Slideshow {
     this.exitBtn.addEventListener('click', () => {
       this.stop();
     });
+
+    this.controllerElem?.addEventListener('mouseenter', () => {
+      this.isHoveringController = true;
+      this.showController();
+      if (this.controllerIdleTimer) clearTimeout(this.controllerIdleTimer);
+    });
+
+    this.controllerElem?.addEventListener('mouseleave', () => {
+      this.isHoveringController = false;
+      this.startControllerIdleTimer();
+    });
+
+    window.addEventListener('mousemove', () => {
+      if (this.isPlaying) {
+        this.showController();
+        this.startControllerIdleTimer();
+      }
+    });
+  }
+
+  startControllerIdleTimer() {
+    if (this.controllerIdleTimer) clearTimeout(this.controllerIdleTimer);
+    this.controllerIdleTimer = setTimeout(() => {
+      if (this.isPlaying && !this.isHoveringController) {
+        this.controllerElem?.classList.add('is-idle');
+      }
+    }, 2500);
+  }
+
+  showController() {
+    this.controllerElem?.classList.remove('is-idle');
   }
 
   setIntervalDuration(ms) {
@@ -97,13 +131,20 @@ export class Slideshow {
   start() {
     this.isPlaying = true;
     this.container.classList.add('is-active');
+    this.showController();
     this.updatePlayState();
     this.resetTimer();
+    this.startControllerIdleTimer();
   }
 
   stop() {
     this.isPlaying = false;
     this.clearTimer();
+    if (this.controllerIdleTimer) {
+      clearTimeout(this.controllerIdleTimer);
+      this.controllerIdleTimer = null;
+    }
+    this.showController();
     this.container.classList.remove('is-active');
     if (this.onExit) this.onExit();
   }

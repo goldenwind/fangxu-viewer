@@ -12,6 +12,46 @@ function formatBytes(bytes) {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
+export function detectPlatform(customNav) {
+  const nav = customNav !== undefined ? customNav : (typeof navigator !== 'undefined' ? navigator : null);
+  if (nav) {
+    const ua = nav.userAgent || '';
+    const platform = nav.platform || '';
+    if (/Mac|iPhone|iPod|iPad/i.test(platform) || /Macintosh/i.test(ua)) {
+      return 'macos';
+    }
+    if (/Win/i.test(platform) || /Windows/i.test(ua)) {
+      return 'windows';
+    }
+  }
+  return 'windows';
+}
+
+export const WINDOWS_MINIMIZE_SVG = `
+<svg class="win-caption-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+  <rect x="0" y="5" width="10" height="1"/>
+</svg>
+`.trim();
+
+export const WINDOWS_MAXIMIZE_SVG = `
+<svg class="win-caption-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+  <path fill-rule="evenodd" d="M0 0v10h10V0H0zm1 1h8v8H1V1z"/>
+</svg>
+`.trim();
+
+export const WINDOWS_RESTORE_SVG = `
+<svg class="win-caption-icon" width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+  <path d="M2 0v2h1V1h6v6h-1v1h2V0H2z"/>
+  <path fill-rule="evenodd" d="M0 2v8h8V2H0zm1 1h6v6H1V3z"/>
+</svg>
+`.trim();
+
+export const WINDOWS_CLOSE_SVG = `
+<svg class="win-caption-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.1">
+  <path d="M0.5 0.5L9.5 9.5M9.5 0.5L0.5 9.5"/>
+</svg>
+`.trim();
+
 export class UIToolbar {
   constructor({
     topbarContainer,
@@ -20,6 +60,8 @@ export class UIToolbar {
     controller,
     canvasView,
     onOpenSettings,
+    platform = detectPlatform(),
+    isMaximized = false,
   }) {
     this.topbarContainer = topbarContainer;
     this.bottomToolbarContainer = bottomToolbarContainer;
@@ -27,6 +69,8 @@ export class UIToolbar {
     this.controller = controller;
     this.canvasView = canvasView;
     this.onOpenSettings = onOpenSettings;
+    this.platform = platform;
+    this.isMaximized = isMaximized;
 
     this.idleTimer = null;
     this.isHoveringToolbar = false;
@@ -36,16 +80,20 @@ export class UIToolbar {
   }
 
   setupDOM() {
-    const isMac = typeof navigator !== 'undefined' && (/Mac|iPhone|iPod|iPad/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent));
+    const isMac = this.platform === 'macos';
     const revealTitle = isMac ? '在访达中显示' : '在文件资源管理器中显示';
     const revealText = isMac ? '访达' : '定位';
 
     // 1. Topbar
     this.topbarContainer.classList.add('viewer-topbar');
+    if (!isMac) {
+      this.topbarContainer.classList.add('is-windows');
+    }
     this.topbarContainer.setAttribute('data-tauri-drag-region', 'true');
     this.topbarContainer.innerHTML = `
       <div class="topbar-left" data-tauri-drag-region="true">
-        <div class="custom-window-controls" data-tauri-drag-region="false">
+        ${isMac ? `
+        <div class="custom-window-controls mac-window-controls" data-tauri-drag-region="false">
           <button class="win-btn win-close" id="btn-win-close" title="关闭窗口 (⌘W)">
             <svg class="win-btn-icon" width="12" height="12" viewBox="0 0 85.4 85.4" fill="none">
               <path fill-rule="evenodd" clip-rule="evenodd" d="M22.5 57.8L57.8 22.5C59.2 21.1 61.4 21.1 62.8 22.5L62.9 22.6C64.3 24 64.3 26.2 62.9 27.6L27.6 62.9C26.2 64.3 24 64.3 22.6 62.9L22.5 62.8C21.2 61.4 21.2 59.2 22.5 57.8Z" fill="currentColor"/>
@@ -63,6 +111,7 @@ export class UIToolbar {
             </svg>
           </button>
         </div>
+        ` : ''}
 
         <div class="app-brand" data-tauri-drag-region="true">
           <svg class="app-logo" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -101,6 +150,17 @@ export class UIToolbar {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           <span>另存为</span>
         </button>
+        ${isMac ? `
+        <button class="top-icon-btn" id="btn-top-convert" title="转换图像 (macOS 快速操作)" style="display:none;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+            <path d="M21 21v-5h-5"/>
+          </svg>
+          <span>转换</span>
+        </button>
+        ` : ''}
         <button class="top-icon-btn" id="btn-top-settings" title="偏好设置 (Ctrl/Cmd + ,)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
@@ -109,6 +169,20 @@ export class UIToolbar {
           <span>设置</span>
         </button>
       </div>
+
+      ${!isMac ? `
+      <div class="windows-window-controls" data-tauri-drag-region="false">
+        <button class="win-caption-btn win-caption-min" id="btn-win-min" title="最小化">
+          ${WINDOWS_MINIMIZE_SVG}
+        </button>
+        <button class="win-caption-btn win-caption-max" id="btn-win-max" title="${this.isMaximized ? '还原' : '最大化'}">
+          ${this.isMaximized ? WINDOWS_RESTORE_SVG : WINDOWS_MAXIMIZE_SVG}
+        </button>
+        <button class="win-caption-btn win-caption-close" id="btn-win-close" title="关闭 (Alt+F4)">
+          ${WINDOWS_CLOSE_SVG}
+        </button>
+      </div>
+      ` : ''}
     `;
 
     // 2. Bottom Floating Toolbar
@@ -174,6 +248,17 @@ export class UIToolbar {
           </svg>
         </button>
 
+        ${isMac ? `
+        <button class="toolbar-btn" id="bar-convert" title="转换图像 (macOS 快速操作)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+            <path d="M21 21v-5h-5"/>
+          </svg>
+        </button>
+        ` : ''}
+
         <button class="toolbar-btn toolbar-btn-danger" id="bar-trash" title="移入回收站 (Delete)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 6h18"/>
@@ -216,6 +301,7 @@ export class UIToolbar {
     this.btnTopReveal = this.topbarContainer.querySelector('#btn-top-reveal');
     this.btnTopCopy = this.topbarContainer.querySelector('#btn-top-copy');
     this.btnTopSaveas = this.topbarContainer.querySelector('#btn-top-saveas');
+    this.btnTopConvert = this.topbarContainer.querySelector('#btn-top-convert');
     this.btnTopHelp = this.topbarContainer.querySelector('#btn-top-help');
     this.btnTopSettings = this.topbarContainer.querySelector('#btn-top-settings');
 
@@ -253,14 +339,22 @@ export class UIToolbar {
     if (btnWinMax) {
       btnWinMax.addEventListener('click', (e) => {
         e.stopPropagation();
-        invoke('toggle_maximize_window').catch(() => {});
+        invoke('toggle_maximize_window').then((res) => {
+          if (typeof res === 'boolean') {
+            this.setMaximized(res);
+          }
+        }).catch(() => {});
       });
     }
 
     // Double click topbar drag region to maximize/restore
     const handleTopbarDblClick = (e) => {
       if (e.target.closest('button, .file-name-badge, .meta-tag, .viewer-help-card')) return;
-      invoke('toggle_maximize_window').catch(() => {});
+      invoke('toggle_maximize_window').then((res) => {
+        if (typeof res === 'boolean') {
+          this.setMaximized(res);
+        }
+      }).catch(() => {});
     };
 
     this.topbarContainer.addEventListener('mousedown', (e) => {
@@ -280,16 +374,21 @@ export class UIToolbar {
       this.startIdleTimer();
     });
 
-    window.addEventListener('mousemove', () => {
-      this.showToolbar();
-      this.startIdleTimer();
-    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mousemove', () => {
+        this.showToolbar();
+        this.startIdleTimer();
+      });
+    }
 
     // Topbar buttons
     this.btnTopOpen.addEventListener('click', () => this.controller.openFileDialog());
     this.btnTopReveal.addEventListener('click', () => this.controller.revealInFileManager());
     this.btnTopCopy.addEventListener('click', () => this.controller.copyToClipboard());
     this.btnTopSaveas.addEventListener('click', () => this.controller.saveAs());
+    if (this.btnTopConvert) {
+      this.btnTopConvert.addEventListener('click', () => this.controller.openConvertModal());
+    }
     this.btnTopSettings.addEventListener('click', () => {
       if (this.onOpenSettings) this.onOpenSettings();
     });
@@ -320,6 +419,10 @@ export class UIToolbar {
       const isVisible = this.controller.toggleExif();
       this.barExif.classList.toggle('is-active', isVisible);
     });
+    const barConvert = this.bottomToolbarContainer.querySelector('#bar-convert');
+    if (barConvert) {
+      barConvert.addEventListener('click', () => this.controller.openConvertModal());
+    }
     this.bottomToolbarContainer.querySelector('#bar-trash').addEventListener('click', () => this.controller.deleteCurrentImage());
     this.bottomToolbarContainer.querySelector('#bar-fullscreen').addEventListener('click', () => this.controller.toggleFullscreen());
 
@@ -329,6 +432,7 @@ export class UIToolbar {
   }
 
   showToolbar() {
+    if (this.isSlideshow) return;
     this.bottomToolbarContainer.classList.remove('is-idle');
   }
 
@@ -347,12 +451,39 @@ export class UIToolbar {
     }, 3000);
   }
 
+  setMaximized(isMax) {
+    this.isMaximized = !!isMax;
+    const btnWinMax = this.topbarContainer.querySelector('#btn-win-max');
+    if (this.platform !== 'macos' && btnWinMax) {
+      if (this.isMaximized) {
+        btnWinMax.title = '还原';
+        btnWinMax.innerHTML = WINDOWS_RESTORE_SVG;
+      } else {
+        btnWinMax.title = '最大化';
+        btnWinMax.innerHTML = WINDOWS_MAXIMIZE_SVG;
+      }
+    }
+    if (this.isMaximized) {
+      this.topbarContainer.classList.add('is-maximized');
+      if (typeof document !== 'undefined') {
+        document.querySelector('#app')?.classList.add('is-maximized');
+      }
+    } else {
+      this.topbarContainer.classList.remove('is-maximized');
+      if (typeof document !== 'undefined') {
+        document.querySelector('#app')?.classList.remove('is-maximized');
+      }
+    }
+  }
+
   updateState(state) {
-    const { currentImage, currentIndex, total, currentMetadata, isFullscreen } = state;
+    const { currentImage, currentIndex, total, currentMetadata, isFullscreen, isSlideshow } = state;
+    this.isSlideshow = !!isSlideshow;
 
     const appRoot = document.querySelector('.viewer-app-root');
     if (appRoot) {
       appRoot.classList.toggle('is-fullscreen', !!isFullscreen);
+      appRoot.classList.toggle('is-slideshow', !!isSlideshow);
     }
 
     if (!currentImage) {
@@ -365,6 +496,7 @@ export class UIToolbar {
       this.btnTopReveal.style.display = 'none';
       this.btnTopCopy.style.display = 'none';
       this.btnTopSaveas.style.display = 'none';
+      if (this.btnTopConvert) this.btnTopConvert.style.display = 'none';
       this.bottomToolbarContainer.style.display = 'none';
       this.sideArrowsContainer.style.display = 'none';
       return;
@@ -372,9 +504,13 @@ export class UIToolbar {
 
     this.topZoom.style.display = 'inline-flex';
     this.bottomToolbarContainer.style.display = 'flex';
-    this.showToolbar();
-    this.startIdleTimer();
-    this.sideArrowsContainer.style.display = total > 1 ? 'block' : 'none';
+    if (this.isSlideshow) {
+      this.hideToolbar();
+    } else {
+      this.showToolbar();
+      this.startIdleTimer();
+    }
+    this.sideArrowsContainer.style.display = total > 1 && !this.isSlideshow ? 'block' : 'none';
 
     this.topFilename.textContent = currentImage.name;
     this.topFilename.title = currentImage.path;
@@ -403,6 +539,7 @@ export class UIToolbar {
     this.btnTopReveal.style.display = 'inline-flex';
     this.btnTopCopy.style.display = 'inline-flex';
     this.btnTopSaveas.style.display = 'inline-flex';
+    if (this.btnTopConvert) this.btnTopConvert.style.display = 'inline-flex';
   }
 
   updateTransform(info) {

@@ -9,9 +9,17 @@ test('SettingsManager initializes with defaults when localStorage is empty', () 
   assert.equal(manager.get('recursiveScanning'), false);
   assert.equal(manager.get('filmstripMode'), 'hover');
   assert.equal(manager.get('showFilmstripByDefault'), false);
-  assert.equal(manager.get('doubleClickBehavior'), 'toggle-fullscreen');
+  assert.equal(manager.get('doubleClickBehavior'), 'toggle-fit');
   assert.equal(manager.get('openImageScaleMode'), 'fit-if-larger');
   assert.equal(manager.get('backgroundTheme'), 'dark');
+  const exts = manager.get('associatedExtensions');
+  assert.ok(Array.isArray(exts));
+  assert.ok(exts.includes('jpg'));
+  assert.ok(exts.includes('png'));
+  assert.ok(exts.includes('webp'));
+  assert.ok(exts.includes('gif'));
+  assert.ok(exts.includes('svg'));
+  assert.equal(exts.length, DEFAULT_SETTINGS.associatedExtensions.length);
 });
 
 test('SettingsManager updates single setting and emits change', () => {
@@ -46,8 +54,10 @@ test('SettingsManager reset restores all defaults', () => {
   const manager = new SettingsManager();
   manager.set('backgroundTheme', 'light');
   manager.set('loopNavigation', false);
+  manager.set('associatedExtensions', ['jpg']);
 
   manager.reset();
   assert.equal(manager.get('backgroundTheme'), DEFAULT_SETTINGS.backgroundTheme);
   assert.equal(manager.get('loopNavigation'), DEFAULT_SETTINGS.loopNavigation);
+  assert.deepEqual(manager.get('associatedExtensions'), DEFAULT_SETTINGS.associatedExtensions);
 });

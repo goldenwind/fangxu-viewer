@@ -20,6 +20,7 @@ export class ViewerController {
     showToast,
     confirmDialog,
     onOpenSettings,
+    onOpenConvertModal,
   }) {
     this.canvasView = canvasView;
     this.filmstrip = filmstrip;
@@ -30,6 +31,7 @@ export class ViewerController {
     this.showToast = showToast || console.log;
     this.confirmDialog = confirmDialog;
     this.onOpenSettings = onOpenSettings;
+    this.onOpenConvertModal = onOpenConvertModal;
 
     this.images = [];
     this.currentIndex = -1;
@@ -228,6 +230,48 @@ export class ViewerController {
     }
   }
 
+  openConvertModal() {
+    if (!this.currentImage) return;
+    if (this.onOpenConvertModal) {
+      this.onOpenConvertModal(this.currentImage, this.currentMetadata);
+    }
+  }
+
+  async convertImageWithSystem({ sourcePath, targetFormat, sizePreset, preserveMetadata }) {
+    try {
+      const res = await invoke('convert_image_with_system', {
+        sourcePath,
+        targetFormat,
+        sizePreset,
+        preserveMetadata,
+      });
+
+      const outPath = res.destPath || res.outputPath || res.dest_path || res.output_path;
+      const outName = res.destName || res.outputName || res.dest_name || res.output_name || '';
+
+      // Re-scan folder if destination is in current folder
+      if (this.folderPath && outPath) {
+        try {
+          const recursive = this.settingsManager ? !!this.settingsManager.get('recursiveScanning') : false;
+          const scanResult = await invoke('scan_folder_images', { targetPath: outPath, recursive });
+          this.images = scanResult.images || [];
+          const newIdx = scanResult.currentIndex >= 0 ? scanResult.currentIndex : 0;
+          this.filmstrip.setImages(this.images, newIdx);
+          await this.jumpToIndex(newIdx);
+        } catch (scanErr) {
+          console.warn('刷新文件夹图片失败:', scanErr);
+        }
+      }
+
+      this.showToast(`转换成功: ${outName}`);
+      return res;
+    } catch (err) {
+      console.error('转换失败:', err);
+      this.showToast(`转换失败: ${err}`);
+      throw err;
+    }
+  }
+
   async deleteCurrentImage() {
     const current = this.currentImage;
     if (!current) return;
@@ -262,21 +306,39 @@ export class ViewerController {
     }
   }
 
-  async toggleFullscreen() {
-    try {
-      const isFull = await invoke('toggle_fullscreen');
+  syncFullscreenState(isFull) {
+    if (this.isFullscreen !== isFull) {
       this.isFullscreen = isFull;
       this.notifyState();
-    } catch {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen().catch(() => {});
-        this.isFullscreen = true;
-      } else {
-        await document.exitFullscreen().catch(() => {});
-        this.isFullscreen = false;
+      if (!isFull) {
+        window.scrollTo(0, 0);
       }
-      this.notifyState();
     }
+  }
+
+  async setFullscreen(isFull) {
+    this.isFullscreen = isFull;
+    this.notifyState();
+    if (!isFull) {
+      window.scrollTo(0, 0);
+    }
+    try {
+      await invoke('set_fullscreen_state', { fullscreen: isFull });
+    } catch {
+      if (isFull) {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen().catch(() => {});
+        }
+      } else {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen().catch(() => {});
+        }
+      }
+    }
+  }
+
+  async toggleFullscreen() {
+    await this.setFullscreen(!this.isFullscreen);
   }
 
   toggleSlideshow() {
@@ -286,6 +348,7 @@ export class ViewerController {
     } else {
       this.slideshow.start();
     }
+    this.notifyState();
   }
 
   toggleFilmstrip() {
@@ -338,6 +401,7 @@ export class ViewerController {
         total: this.images.length,
         hasImage: !!this.currentImage,
         isFullscreen: this.isFullscreen,
+        isSlideshow: !!(this.slideshow && this.slideshow.isPlaying),
         isLoading: this.isLoading,
       });
     }
@@ -352,8 +416,10 @@ export class ViewerController {
 
       const ctrlOrCmd = e.ctrlKey || e.metaKey;
 
-      // Esc: Close settings, help, dialogs, drawers, exit slideshow, or exit fullscreen
+      // Esc: Close settings, help, dialogs, exit slideshow, exit fullscreen, or close window
       if (e.key === 'Escape') {
+        e.preventDefault();
+
         const settingsOverlay = document.querySelector('.viewer-settings-modal-overlay.is-open');
         if (settingsOverlay) {
           settingsOverlay.classList.remove('is-open');
@@ -377,26 +443,18 @@ export class ViewerController {
           return;
         }
 
-        if (this.slideshow.isPlaying) {
+        if (this.slideshow && this.slideshow.isPlaying) {
           this.slideshow.stop();
           return;
         }
-        if (this.exifDrawer.isVisible) {
-          this.exifDrawer.toggle(false);
-          return;
-        }
-        if (this.filmstrip.isVisible) {
-          this.filmstrip.toggle(false);
-          return;
-        }
+
         if (this.isFullscreen) {
-          this.toggleFullscreen();
+          this.setFullscreen(false);
           return;
         }
-        // If zoomed in, reset to fit
-        if (!this.canvasView.isFitMode) {
-          this.canvasView.fitToWindow(true);
-        }
+
+        // 非全屏状态下按 Esc 直接关闭当前窗口，绝不触发放大图片或其他副作用
+        invoke('close_window').catch(() => window.close());
         return;
       }
 

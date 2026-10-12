@@ -1,8 +1,9 @@
-mod update;
+mod feedback;
+mod updates;
 mod viewer;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 fn build_localized_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let app_submenu = SubmenuBuilder::new(app, "方序看图")
@@ -27,6 +28,8 @@ fn build_localized_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Erro
             .build(app)?)
         .item(&MenuItemBuilder::with_id("save_as", "图片另存为...")
             .accelerator("CmdOrCtrl+S")
+            .build(app)?)
+        .item(&MenuItemBuilder::with_id("convert_image", "转换图像...")
             .build(app)?)
         .item(&MenuItemBuilder::with_id("reveal", "在访达中定位")
             .accelerator("CmdOrCtrl+R")
@@ -103,6 +106,11 @@ fn build_localized_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Erro
         .item(&MenuItemBuilder::with_id("help", "快捷键指南")
             .accelerator("CmdOrCtrl+/")
             .build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("feedback", "产品反馈...")
+            .build(app)?)
+        .item(&MenuItemBuilder::with_id("check_update", "检查更新...")
+            .build(app)?)
         .build()?;
 
     let menu = MenuBuilder::new(app)
@@ -124,7 +132,7 @@ fn build_localized_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Erro
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(update::UpdateClient::default())
+        .manage(updates::UpdateState::default())
         .setup(|app| {
             #[cfg(target_os = "macos")]
             let _ = build_localized_menu(app);
@@ -135,8 +143,9 @@ pub fn run() {
             let _ = app.emit("menu-action", id);
         })
         .invoke_handler(tauri::generate_handler![
-            update::product_update_check,
-            update::product_update_download,
+            updates::check_product_update,
+            updates::open_product_update,
+            feedback::open_product_feedback,
             viewer::scan_folder_images,
             viewer::read_image_meta,
             viewer::read_image_as_data_url,
@@ -144,13 +153,43 @@ pub fn run() {
             viewer::copy_image_to_clipboard,
             viewer::open_image_dialog,
             viewer::save_image_as_dialog,
+            viewer::convert_image_with_system,
             viewer::reveal_in_file_manager,
             viewer::toggle_fullscreen,
+            viewer::set_fullscreen_state,
+            viewer::is_fullscreen,
+            viewer::is_window_maximized,
             viewer::minimize_window,
             viewer::toggle_maximize_window,
+            viewer::maximize_window_initial,
             viewer::close_window,
             viewer::get_cli_target,
+            viewer::apply_file_associations,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run Fangxu viewer");
+        .build(tauri::generate_context!())
+        .expect("failed to run Fangxu viewer")
+        .run(|app_handle, event| match event {
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+            tauri::RunEvent::Opened { urls } => {
+                for url in urls {
+                    if let Ok(path) = url.to_file_path() {
+                        if path.exists() {
+                            let path_str = path.to_string_lossy().to_string();
+                            viewer::set_pending_target(path_str.clone());
+                            let _ = app_handle.emit("open-target", path_str);
+                        }
+                    }
+                }
+            }
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::Resized(_), .. } => {
+                if let Some(win) = app_handle.get_webview_window(&label) {
+                    let is_full = win.is_fullscreen().unwrap_or(false);
+                    let _ = win.emit("window-fullscreen-change", is_full);
+                    let _ = app_handle.emit("window-fullscreen-change", is_full);
+                    let is_max = win.is_maximized().unwrap_or(false);
+                    let _ = win.emit("window-maximize-change", is_max);
+                }
+            }
+            _ => {}
+        });
 }

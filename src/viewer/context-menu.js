@@ -12,6 +12,7 @@ export class ContextMenu {
   }
 
   setupDOM() {
+    const isMac = typeof navigator !== 'undefined' && (/Mac|iPhone|iPod|iPad/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent));
     this.menuEl = document.createElement('div');
     this.menuEl.className = 'viewer-context-menu';
     this.menuEl.style.display = 'none';
@@ -127,6 +128,19 @@ export class ContextMenu {
         <span class="item-text">图片另存为...</span>
         <span class="item-shortcut">⌘S</span>
       </div>
+      ${isMac ? `
+      <div class="context-menu-item" data-action="convert-image">
+        <span class="item-icon">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+            <path d="M21 21v-5h-5"/>
+          </svg>
+        </span>
+        <span class="item-text">转换图像...</span>
+      </div>
+      ` : ''}
       <div class="context-menu-item" data-action="reveal">
         <span class="item-icon">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -244,6 +258,9 @@ export class ContextMenu {
         break;
       case 'save-as':
         this.controller.saveAs();
+        break;
+      case 'convert-image':
+        this.controller.openConvertModal();
         break;
       case 'reveal':
         this.controller.revealInFileManager();

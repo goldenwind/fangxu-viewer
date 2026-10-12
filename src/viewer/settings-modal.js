@@ -1,15 +1,18 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { invoke } from '@tauri-apps/api/core';
+import { SUPPORTED_FORMATS_METADATA, ALL_SUPPORTED_EXTENSIONS } from './settings.js';
 
 /**
  * SettingsModal: Horizontal preferences dialog with left category tabs
  */
 export class SettingsModal {
-  constructor({ container, settingsManager, onApplySettings, onCheckUpdate, currentVersion = '0.1.0' }) {
+  constructor({ container, settingsManager, onApplySettings, onCheckUpdate, currentVersion = '0.1.1', showToast }) {
     this.container = container;
     this.settingsManager = settingsManager;
     this.onApplySettings = onApplySettings;
     this.onCheckUpdate = onCheckUpdate;
     this.currentVersion = currentVersion;
+    this.showToast = showToast || null;
     this.isOpen = false;
     this.activeTab = 'habits';
 
@@ -47,6 +50,13 @@ export class SettingsModal {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 0 0 20Z"/></svg>
               <span>界面与放映</span>
             </button>
+            <button class="settings-tab-btn" data-tab="associations">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              <span>文件关联</span>
+            </button>
             <button class="settings-tab-btn" data-tab="about">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
               <span>关于与更新</span>
@@ -83,14 +93,14 @@ export class SettingsModal {
                   <label class="settings-radio-label">
                     <input type="radio" name="opt-dblclick" value="toggle-fit" />
                     <div class="radio-content">
-                      <strong>适应窗口 与 1:1 实际尺寸切换</strong>
-                      <span>双击图片在最佳适应比例与原始高像素间快速切换</span>
+                      <strong>适应窗口 与 1:1 实际尺寸切换（推荐）</strong>
+                      <span>双击图片在最佳适应比例与原始高像素间快速居中缩放</span>
                     </div>
                   </label>
                   <label class="settings-radio-label">
                     <input type="radio" name="opt-dblclick" value="toggle-fullscreen" />
                     <div class="radio-content">
-                      <strong>进入 / 退出全屏看图模式（推荐）</strong>
+                      <strong>进入 / 退出全屏看图模式</strong>
                       <span>双击窗口在全屏与普通窗口间自由切换</span>
                     </div>
                   </label>
@@ -191,7 +201,41 @@ export class SettingsModal {
               </div>
             </div>
 
-            <!-- 4. 关于与更新 Tab -->
+            <!-- 4. 文件关联 Tab -->
+            <div class="settings-tab-pane" id="pane-associations">
+              <div class="associations-intro-card">
+                <div class="associations-intro-title">图片格式关联</div>
+                <div class="associations-intro-desc">
+                  设置双击或在系统文件管理器中打开时默认使用方序看图打开的图片类型。支持的格式默认全选关联。
+                </div>
+              </div>
+
+              <div class="associations-toolbar">
+                <div class="associations-batch-btns">
+                  <button type="button" class="settings-secondary-btn" id="btn-assoc-select-all">全选</button>
+                  <button type="button" class="settings-secondary-btn" id="btn-assoc-deselect-all">全不选</button>
+                  <button type="button" class="settings-secondary-btn" id="btn-assoc-restore">恢复默认</button>
+                </div>
+                <button type="button" class="settings-primary-btn" id="btn-assoc-apply">应用关联设置</button>
+              </div>
+
+              <div class="settings-section">
+                <div class="settings-section-title">常用网络与照片格式</div>
+                <div class="associations-grid" id="assoc-grid-common"></div>
+              </div>
+
+              <div class="settings-section" style="margin-top: 14px;">
+                <div class="settings-section-title">专业摄影与图形设计</div>
+                <div class="associations-grid" id="assoc-grid-pro"></div>
+              </div>
+
+              <div class="settings-section" style="margin-top: 14px;">
+                <div class="settings-section-title">系统与专用格式</div>
+                <div class="associations-grid" id="assoc-grid-system"></div>
+              </div>
+            </div>
+
+            <!-- 5. 关于与更新 Tab -->
             <div class="settings-tab-pane" id="pane-about">
               <div class="settings-about-hero">
                 <div class="about-app-icon">
@@ -215,9 +259,25 @@ export class SettingsModal {
                 <div class="settings-update-card">
                   <div class="update-info-block">
                     <div class="update-status-title" id="about-update-status">当前版本：v${this.currentVersion}</div>
-                    <div class="update-status-desc" id="about-update-desc">点击右侧按钮检查是否有新版本可用</div>
+                    <div class="update-status-desc" id="about-update-desc">手动检查是否有适用于此电脑的新版本</div>
                   </div>
                   <button class="settings-check-update-btn" id="btn-check-update" type="button">检查更新</button>
+                </div>
+                <div id="about-update-details" style="display: none; margin-top: 10px; padding: 12px; background: var(--bg-surface-elevated, #27272a); border-radius: 8px;">
+                  <div id="about-update-title" style="font-weight: 600; font-size: 13px; margin-bottom: 6px;"></div>
+                  <div id="about-update-notes" style="font-size: 12px; color: var(--text-secondary, #a1a1aa); white-space: pre-wrap; margin-bottom: 10px;"></div>
+                  <button class="settings-primary-btn" id="btn-download-update" type="button" style="padding: 6px 14px; font-size: 12px;">下载新版本 ↗</button>
+                </div>
+              </div>
+
+              <div class="settings-section" style="margin-top: 18px;">
+                <div class="settings-section-title">反馈与支持</div>
+                <div class="settings-update-card">
+                  <div class="update-info-block">
+                    <div class="update-status-title">产品反馈</div>
+                    <div class="update-status-desc">遇到问题、操作疑惑或功能建议？欢迎提交反馈，我们持续倾听与改进</div>
+                  </div>
+                  <button class="settings-secondary-btn" id="btn-open-feedback" type="button" style="padding: 7px 16px;">提交反馈</button>
                 </div>
               </div>
 
@@ -260,6 +320,44 @@ export class SettingsModal {
     this.dblclickRadios = this.container.querySelectorAll('input[name="opt-dblclick"]');
     this.bgThemeSelect = this.container.querySelector('#opt-bg-theme');
     this.slideshowSpeedSelect = this.container.querySelector('#opt-slideshow-speed');
+
+    this.renderFormatGrids();
+  }
+
+  renderFormatGrids() {
+    const commonContainer = this.container.querySelector('#assoc-grid-common');
+    const proContainer = this.container.querySelector('#assoc-grid-pro');
+    const systemContainer = this.container.querySelector('#assoc-grid-system');
+    if (!commonContainer || !proContainer || !systemContainer) return;
+
+    const currentExts = new Set(this.settingsManager.get('associatedExtensions') || ALL_SUPPORTED_EXTENSIONS);
+
+    const renderCard = (f) => {
+      const isChecked = currentExts.has(f.ext);
+      return `
+        <label class="format-pill-card ${isChecked ? 'is-checked' : ''}" data-ext="${f.ext}">
+          <input type="checkbox" class="format-checkbox" value="${f.ext}" ${isChecked ? 'checked' : ''} />
+          <div class="format-pill-content">
+            <div class="format-pill-header">
+              <span class="format-badge">.${f.ext}</span>
+              <span class="format-name">${f.name}</span>
+            </div>
+            <div class="format-desc">${f.desc}</div>
+          </div>
+        </label>
+      `;
+    };
+
+    commonContainer.innerHTML = SUPPORTED_FORMATS_METADATA.filter((f) => f.category === 'common').map(renderCard).join('');
+    proContainer.innerHTML = SUPPORTED_FORMATS_METADATA.filter((f) => f.category === 'pro').map(renderCard).join('');
+    systemContainer.innerHTML = SUPPORTED_FORMATS_METADATA.filter((f) => f.category === 'system').map(renderCard).join('');
+  }
+
+  syncAssociatedExtensionsFromUI() {
+    const checked = Array.from(this.container.querySelectorAll('.format-checkbox:checked')).map(
+      (cb) => cb.value
+    );
+    this.updateSetting('associatedExtensions', checked);
   }
 
   bindEvents() {
@@ -341,41 +439,164 @@ export class SettingsModal {
       this.updateSetting('slideshowInterval', parseInt(this.slideshowSpeedSelect.value, 10));
     });
 
-    // Check Update Button
+    // Format associations events
+    const assocPane = this.container.querySelector('#pane-associations');
+    if (assocPane) {
+      assocPane.addEventListener('change', (e) => {
+        if (e.target && e.target.classList.contains('format-checkbox')) {
+          const card = e.target.closest('.format-pill-card');
+          if (card) {
+            card.classList.toggle('is-checked', e.target.checked);
+          }
+          this.syncAssociatedExtensionsFromUI();
+        }
+      });
+    }
+
+    const btnSelectAll = this.container.querySelector('#btn-assoc-select-all');
+    if (btnSelectAll) {
+      btnSelectAll.addEventListener('click', () => {
+        this.container.querySelectorAll('.format-pill-card').forEach((card) => {
+          const cb = card.querySelector('.format-checkbox');
+          if (cb) cb.checked = true;
+          card.classList.add('is-checked');
+        });
+        this.syncAssociatedExtensionsFromUI();
+      });
+    }
+
+    const btnDeselectAll = this.container.querySelector('#btn-assoc-deselect-all');
+    if (btnDeselectAll) {
+      btnDeselectAll.addEventListener('click', () => {
+        this.container.querySelectorAll('.format-pill-card').forEach((card) => {
+          const cb = card.querySelector('.format-checkbox');
+          if (cb) cb.checked = false;
+          card.classList.remove('is-checked');
+        });
+        this.syncAssociatedExtensionsFromUI();
+      });
+    }
+
+    const btnRestoreAssoc = this.container.querySelector('#btn-assoc-restore');
+    if (btnRestoreAssoc) {
+      btnRestoreAssoc.addEventListener('click', () => {
+        const defaultSet = new Set(ALL_SUPPORTED_EXTENSIONS);
+        this.container.querySelectorAll('.format-pill-card').forEach((card) => {
+          const cb = card.querySelector('.format-checkbox');
+          if (cb) {
+            const isChecked = defaultSet.has(cb.value);
+            cb.checked = isChecked;
+            card.classList.toggle('is-checked', isChecked);
+          }
+        });
+        this.syncAssociatedExtensionsFromUI();
+      });
+    }
+
+    const btnApplyAssoc = this.container.querySelector('#btn-assoc-apply');
+    if (btnApplyAssoc) {
+      btnApplyAssoc.addEventListener('click', async () => {
+        const checkedExts = Array.from(this.container.querySelectorAll('.format-checkbox:checked')).map(
+          (cb) => cb.value
+        );
+        btnApplyAssoc.disabled = true;
+        const originalText = btnApplyAssoc.textContent;
+        btnApplyAssoc.textContent = '应用中...';
+        try {
+          const count = await invoke('apply_file_associations', { extensions: checkedExts });
+          if (this.showToast) {
+            this.showToast(`已成功关联 ${count} 种图片格式`);
+          }
+          btnApplyAssoc.textContent = `已关联 (${count})`;
+          setTimeout(() => {
+            btnApplyAssoc.textContent = originalText;
+            btnApplyAssoc.disabled = false;
+          }, 1500);
+        } catch (err) {
+          console.error('Failed to apply file associations:', err);
+          if (this.showToast) {
+            this.showToast(`关联失败: ${err}`);
+          }
+          btnApplyAssoc.textContent = originalText;
+          btnApplyAssoc.disabled = false;
+        }
+      });
+    }
+
+    // Feedback Button
+    const feedbackBtn = this.container.querySelector('#btn-open-feedback');
+    if (feedbackBtn) {
+      feedbackBtn.addEventListener('click', async () => {
+        try {
+          await invoke('open_product_feedback', { language: 'zh' });
+        } catch (err) {
+          console.error('Failed to open feedback:', err);
+          if (this.showToast) {
+            this.showToast(`打开产品反馈失败: ${err}`);
+          }
+        }
+      });
+    }
+
+    // Check Update and Download Buttons
     const checkBtn = this.container.querySelector('#btn-check-update');
+    const downloadBtn = this.container.querySelector('#btn-download-update');
     const statusTitle = this.container.querySelector('#about-update-status');
     const statusDesc = this.container.querySelector('#about-update-desc');
+    const updateDetails = this.container.querySelector('#about-update-details');
+    const updateTitle = this.container.querySelector('#about-update-title');
+    const updateNotes = this.container.querySelector('#about-update-notes');
 
     if (checkBtn) {
       checkBtn.addEventListener('click', async () => {
         checkBtn.disabled = true;
         checkBtn.textContent = '检查中...';
-        if (statusTitle) statusTitle.textContent = '正在检查最新版本...';
+        if (statusTitle) statusTitle.textContent = '正在检查更新...';
         if (statusDesc) statusDesc.textContent = '连接更新服务器中，请稍候';
+        if (updateDetails) updateDetails.style.display = 'none';
 
         try {
-          if (this.onCheckUpdate) {
-            const release = await this.onCheckUpdate();
-            if (release && release.updateAvailable) {
-              if (statusTitle) statusTitle.textContent = `发现新版本：${release.latestVersion}`;
-              if (statusDesc) statusDesc.textContent = release.title || '有新版本可用，已弹出升级提示';
-              checkBtn.textContent = '发现新版';
-            } else {
-              if (statusTitle) statusTitle.textContent = `当前已是最新版本 (v${this.currentVersion})`;
-              if (statusDesc) statusDesc.textContent = '暂无新版本发布';
-              checkBtn.textContent = '已是最新';
+          const result = await invoke('check_product_update');
+          if (result && result.update_available) {
+            const latestVer = (result.latest_version || '').replace(/^[vV]/, '');
+            if (statusTitle) statusTitle.textContent = `发现新版本：v${latestVer}`;
+            if (statusDesc) statusDesc.textContent = result.force_update ? '当前版本需要升级，请下载并安装' : '有新版本可用，点击下方按钮下载';
+            if (updateTitle) {
+              updateTitle.textContent = result.title || `版本 v${latestVer}`;
+              updateTitle.style.display = result.title ? 'block' : 'none';
             }
+            if (updateNotes) {
+              updateNotes.textContent = result.release_notes || '';
+              updateNotes.style.display = result.release_notes ? 'block' : 'none';
+            }
+            if (updateDetails) updateDetails.style.display = 'block';
+            checkBtn.textContent = '再次检查';
           } else {
             if (statusTitle) statusTitle.textContent = `当前已是最新版本 (v${this.currentVersion})`;
-            if (statusDesc) statusDesc.textContent = '暂无新版本发布';
+            if (statusDesc) statusDesc.textContent = '当前已安装最新版本，暂无新版本发布';
             checkBtn.textContent = '已是最新';
           }
         } catch (err) {
-          if (statusTitle) statusTitle.textContent = '检查更新失败';
-          if (statusDesc) statusDesc.textContent = String(err.message || err);
-          checkBtn.textContent = '重新检查';
+          if (statusTitle) statusTitle.textContent = '检查更新未完成';
+          if (statusDesc) statusDesc.textContent = String(err);
+          checkBtn.textContent = '重试';
         } finally {
           checkBtn.disabled = false;
+        }
+      });
+    }
+
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', async () => {
+        downloadBtn.disabled = true;
+        try {
+          await invoke('open_product_update');
+        } catch (err) {
+          if (this.showToast) {
+            this.showToast(`打开更新下载地址失败: ${err}`);
+          }
+        } finally {
+          downloadBtn.disabled = false;
         }
       });
     }
@@ -434,6 +655,17 @@ export class SettingsModal {
 
     this.bgThemeSelect.value = s.backgroundTheme || 'dark';
     this.slideshowSpeedSelect.value = String(s.slideshowInterval || 3000);
+
+    // Sync associations UI
+    const currentExts = new Set(s.associatedExtensions || ALL_SUPPORTED_EXTENSIONS);
+    this.container.querySelectorAll('.format-pill-card').forEach((card) => {
+      const cb = card.querySelector('.format-checkbox');
+      if (cb) {
+        const isChecked = currentExts.has(cb.value);
+        cb.checked = isChecked;
+        card.classList.toggle('is-checked', isChecked);
+      }
+    });
   }
 
   open(initialTab = 'habits') {
